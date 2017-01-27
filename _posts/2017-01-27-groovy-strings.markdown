@@ -58,4 +58,49 @@ println "Result of \${20 + 5} = ${20 + 5}"
 ~~~
 >\> Result of ${20 + 5} = 25
 
+The third type of string in Groovy is triple single quoted string.
+It is also called multi-line string. Its purpose is to store multi-line strings without putting new line characters (`\n`)
+
+An example:
+
+~~~groovy
+def message = '''Hello team,
+have a nice day!
+
+Kind regards,
+Mike
+'''
+
+println message
+~~~
+>\> Hello team,  
+>\> have a nice day!  
+>\>   
+>\> Kind regards,  
+>\> Mike
+
+If you need to escape new line symbol just put backslash (`\`) in the end of line:
+
+~~~groovy
+def message = '''Should be in \
+the same line'''
+
+println message
+~~~
+>\> Should be in the same line
+
+There are some useful methods injected into strings in Groovy. Thankfully to them, it is so easy to use Groovy as a a scripting language.
+
+~~~groovy
+def process = 'ls -la'.execute()
+
+println process.text
+~~~
+>\> total 20  
+>\> drwxr-xr-x 2 user user 4096 Jan 28 00:13 .  
+>\> drwxr-xr-x 3 user user 4096 Jan 27 23:26 ..  
+>\> -rw-r--r-- 1 user user   54 Jan 28 00:12 Example.groovy  
+
+
+
 [GString docs]: http://docs.groovy-lang.org/latest/html/api/groovy/lang/GString.html

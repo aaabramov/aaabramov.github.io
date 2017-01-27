@@ -12,14 +12,14 @@ Sometimes you need to declare custom tasks in your project.
 
 For instance, you need to copy all `*.log` files from `files` directory to the `_logs_` folder:
 
-{% highlight groovy %}
+~~~groovy
 task copyLogs(type: Copy){
     from 'logs'     // from which directory to copy
     include '*.log' // what patterns to include
     into 'archive'  // where to copy these files
 }
-{% endhighlight %}
-See: [Copy task type][Copy task docs]
+~~~
+See: [Copy task type][Copy task docs]  
 See: [Groovy strings guide][Groovy strings guide]
 
 ---
@@ -36,7 +36,7 @@ Logically the steps are:
 
 So let's define corresponding zip task:
 
-{% highlight groovy %}
+~~~groovy
 task zipLogs(type: Zip) {
 
     // tell that we should copy the logs at first
@@ -54,7 +54,7 @@ task zipLogs(type: Zip) {
     // where to put the result archive
     destinationDir file('archive')
 }
-{% endhighlight %}
+~~~
 Read more about GString: [GString documentation][GString docs]  
 Read more about Groovy closure: [Groovy closure][Groovy closure]  
 
@@ -64,13 +64,13 @@ In this way, you can create new task, e.g. `publishLogs` and say that it `depend
 
 For example:
 
-{% highlight groovy %}
+~~~groovy
 task publishLogs(dependsOn: 'zipLogs') {
     doLast {
         // publish the logs or send them via e-mail
     }
 }
-{% endhighlight %}
+~~~
 
 [Copy task docs]: https://docs.gradle.org/current/dsl/org.gradle.api.tasks.Copy.html
 [GString docs]: http://docs.groovy-lang.org/latest/html/documentation/#_double_quoted_string
