@@ -1,0 +1,18 @@
+import java.time.LocalDateTime
+
+task copyLogs(type: Copy) {
+    from 'files'
+    include '*.log'
+    into 'logs'
+}
+
+task zipLogs(type: Zip) {
+    dependsOn 'copyLogs'
+
+    archiveName "logs-${LocalDateTime.now()}.zip"
+    from 'logs'
+
+    include { file -> file.name.endsWith('log') }
+
+    destinationDir file('archive')
+}
