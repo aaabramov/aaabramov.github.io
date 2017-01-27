@@ -19,7 +19,8 @@ task copyLogs(type: Copy){
     into 'archive'  // where to copy these files
 }
 {% endhighlight %}
-Read more about Copy task: [Copy task type][Copy task docs]
+See: [Copy task type][Copy task docs]
+See: [Groovy strings guide][Groovy strings guide]
 
 ---
 
@@ -74,3 +75,4 @@ task publishLogs(dependsOn: 'zipLogs') {
 [Copy task docs]: https://docs.gradle.org/current/dsl/org.gradle.api.tasks.Copy.html
 [GString docs]: http://docs.groovy-lang.org/latest/html/documentation/#_double_quoted_string
 [Groovy closure]: http://groovy-lang.org/closures.html
+[Groovy strings guide]: https://abrasha.github.io/groovy/2017/01/16/groovy-strings.html
