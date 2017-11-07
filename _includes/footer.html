@@ -27,6 +27,12 @@
 						{% include icon-twitter.html username=site.twitter_username %}
 					</li>
 					{% endif %}
+
+					{% if site.stackoverflow_link %}
+					<li>
+						{% include icon-so.html link=site.stackoverflow_link %}
+					</li>
+					{% endif %}
 				</ul>
 			</div>
 

@@ -4,12 +4,8 @@ title: About
 permalink: /about/
 ---
 
-This is the base Jekyll theme. You can find out more info about customizing your Jekyll theme, as well as basic Jekyll usage documentation at [jekyllrb.com](http://jekyllrb.com/)
+Andrii is a young and promising software developer. Mostly, he is specialized in JVM-based languages like Java, Scala and Groovy. He has more than 3 years of experience in developing back end as well as client Android applications.
 
-You can find the source code for the Jekyll new theme at:
-{% include icon-github.html username="jglovier" %} /
-[jekyll-new](https://github.com/jglovier/jekyll-new)
+He is fond of domesticating new technologies and expanding horizons of his knowledge. From time to time Andrii gives knowledge sharing presentations.
 
-You can find the source code for Jekyll at
-{% include icon-github.html username="jekyll" %} /
-[jekyll](https://github.com/jekyll/jekyll)
+Regarding his hobbies, he enjoys playing table tennis, billiards and always has some time for contributing to Open Source Projects.
