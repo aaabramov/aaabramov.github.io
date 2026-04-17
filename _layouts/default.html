@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title>{% if page.title %}{{ page.title }} — {{ site.title }}{% else %}{{ site.title }}{% endif %}</title>
+  <meta name="description" content="{% if page.excerpt %}{{ page.excerpt | strip_html | strip_newlines | truncate: 160 }}{% else %}{{ site.description }}{% endif %}">
+  <meta name="google-site-verification" content="--tA_OOxxHfNlq1nQwBgtxdxHAuyHzMoDStEUzz-KPI">
+
+  <link rel="icon" href="/favicon.ico">
+  <link rel="stylesheet" href="{{ '/css/main.css' | prepend: site.baseurl }}">
+  <link rel="canonical" href="{{ page.url | replace:'index.html','' | prepend: site.baseurl | prepend: site.url }}">
+  <link rel="alternate" type="application/rss+xml" title="{{ site.title }}" href="{{ '/feed.xml' | prepend: site.baseurl | prepend: site.url }}">
+</head>
+<body>
+
+<div class="kb">
+
+  <header class="kb-header">
+    <a href="/" class="kb-name">aaabramov</a>
+    <nav>
+      <a href="/about/">about</a>
+      {% if site.github_username %}<a href="https://github.com/{{ site.github_username }}">github</a>{% endif %}
+      {% if site.twitter_username %}<a href="https://twitter.com/{{ site.twitter_username }}">twitter</a>{% endif %}
+      <a href="/feed.xml">rss</a>
+    </nav>
+  </header>
+
+  {{ content }}
+
+  <footer class="kb-footer">
+    <span>© Andrii Abramov</span>
+    <span class="sep">·</span>
+    <a href="mailto:{{ site.email }}">email</a>
+    <span class="sep">·</span>
+    <a href="/feed.xml">rss</a>
+    {% if site.stackoverflow_link %}
+    <span class="sep">·</span>
+    <a href="{{ site.stackoverflow_link }}">stack overflow</a>
+    {% endif %}
+  </footer>
+
+</div>
+
+<!-- Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=UA-90998461-1"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'UA-90998461-1');
+</script>
+
+</body>
+</html>

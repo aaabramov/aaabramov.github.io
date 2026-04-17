@@ -1,0 +1,1420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Embeddings — A Visual Playground</title>
+<style>
+  :root {
+    --bg: #0b0e14;
+    --bg-2: #141925;
+    --bg-3: #1c2232;
+    --fg: #e6edf3;
+    --fg-dim: #9aa4b2;
+    --fg-dimmer: #5f6a7d;
+    --accent: #7aa2f7;
+    --accent-2: #bb9af7;
+    --accent-3: #7dcfff;
+    --good: #9ece6a;
+    --warn: #e0af68;
+    --bad: #f7768e;
+    --border: #2a3142;
+    --radius: 12px;
+    --mono: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.6;
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .container { max-width: 980px; margin: 0 auto; padding: 0 24px; }
+
+  /* Hero */
+  header {
+    padding: 80px 0 60px;
+    background: radial-gradient(ellipse at top, rgba(122,162,247,0.12), transparent 60%);
+    border-bottom: 1px solid var(--border);
+  }
+  h1 {
+    font-size: clamp(32px, 5vw, 52px);
+    line-height: 1.15;
+    margin: 0 0 16px;
+    letter-spacing: -0.02em;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 50%, var(--accent-3) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 700;
+  }
+  .tagline {
+    font-size: clamp(17px, 2vw, 20px);
+    color: var(--fg-dim);
+    max-width: 640px;
+    margin: 0 0 28px;
+  }
+  .hero-meta {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: var(--fg-dimmer);
+    font-family: var(--mono);
+  }
+  .hero-meta span::before { content: "◆ "; color: var(--accent); }
+
+  /* Sections */
+  section {
+    padding: 64px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  section:last-of-type { border-bottom: none; }
+  section h2 {
+    font-size: clamp(24px, 3.5vw, 32px);
+    margin: 0 0 8px;
+    letter-spacing: -0.01em;
+  }
+  section .eyebrow {
+    font-family: var(--mono);
+    color: var(--accent);
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  section .lede {
+    color: var(--fg-dim);
+    max-width: 720px;
+    margin: 0 0 32px;
+    font-size: 17px;
+  }
+  p { margin: 0 0 16px; }
+  p code, li code {
+    font-family: var(--mono);
+    background: var(--bg-3);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.88em;
+    color: var(--accent-3);
+  }
+
+  .callout {
+    padding: 16px 20px;
+    background: var(--bg-2);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    margin: 20px 0;
+    color: var(--fg-dim);
+  }
+  .callout strong { color: var(--fg); }
+
+  /* Card */
+  .card {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-top: 20px;
+  }
+
+  /* ── SECTION 1: Word→Vector animation ─────────────────────── */
+  .vector-demo {
+    display: grid;
+    grid-template-columns: auto auto 1fr;
+    align-items: center;
+    gap: 18px;
+    font-family: var(--mono);
+    padding: 22px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .word-in {
+    font-size: 28px;
+    font-family: var(--sans);
+    color: var(--accent-2);
+    font-weight: 600;
+    text-align: center;
+    min-width: 80px;
+  }
+  .arrow {
+    color: var(--accent);
+    font-size: 24px;
+  }
+  .vector-out {
+    color: var(--fg-dim);
+    font-size: 13px;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+  .vector-out span.n { color: var(--good); }
+  .vector-out span.p { color: var(--accent-3); }
+
+  /* ── SECTION 2: compare cards ─────────────────────── */
+  .compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 20px;
+  }
+  @media (max-width: 720px) { .compare { grid-template-columns: 1fr; } }
+  .compare .card { margin: 0; }
+  .compare h3 { margin: 0 0 10px; font-size: 16px; }
+  .compare .label-bad { color: var(--bad); font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
+  .compare .label-good { color: var(--good); font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
+  .compare .match { color: var(--good); }
+  .compare .miss { color: var(--bad); }
+  .compare .query { font-family: var(--mono); background: var(--bg-3); padding: 8px 12px; border-radius: 6px; font-size: 13px; margin: 10px 0; }
+
+  /* ── SECTION 3: 2D playground ─────────────────────── */
+  #scatter-wrap {
+    position: relative;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  #scatter {
+    display: block;
+    width: 100%;
+    height: 520px;
+  }
+  #scatter-info {
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--fg-dim);
+    background: rgba(11,14,20,0.75);
+    padding: 8px 12px;
+    border-radius: 6px;
+    backdrop-filter: blur(8px);
+    pointer-events: none;
+    max-width: 280px;
+  }
+  #scatter-info strong { color: var(--accent); }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 14px; font-size: 13px; font-family: var(--mono); color: var(--fg-dim); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .dot { width: 10px; height: 10px; border-radius: 50%; }
+
+  /* ── SECTION 4: cosine playground ─────────────────────── */
+  .cosine-layout {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 16px;
+  }
+  @media (max-width: 720px) { .cosine-layout { grid-template-columns: 1fr; } }
+  #cosine-svg {
+    display: block;
+    width: 100%;
+    height: 400px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: crosshair;
+  }
+  .cosine-stats {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  .cosine-stats .row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px dashed var(--border);
+  }
+  .cosine-stats .row:last-of-type { border-bottom: none; }
+  .cosine-stats .label { color: var(--fg-dim); }
+  .cosine-stats .value { color: var(--fg); font-weight: 600; }
+  .cosine-stats .sim-bar {
+    margin-top: 16px;
+    height: 8px;
+    background: var(--bg-3);
+    border-radius: 4px;
+    overflow: hidden;
+    position: relative;
+  }
+  .cosine-stats .sim-bar .fill {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: linear-gradient(90deg, var(--bad), var(--warn), var(--good));
+    transition: width 0.1s;
+  }
+  .cosine-stats .sim-bar-center {
+    position: absolute;
+    left: 50%;
+    top: -4px;
+    bottom: -4px;
+    width: 2px;
+    background: var(--fg-dimmer);
+  }
+
+  /* ── Section: real embeddings ─────────────────────── */
+  .model-status {
+    padding: 12px 16px;
+    background: var(--bg-3);
+    border-radius: 8px;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--fg-dim);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--warn);
+    flex-shrink: 0;
+  }
+  .status-dot.ready { background: var(--good); box-shadow: 0 0 10px var(--good); }
+  .status-dot.loading { background: var(--warn); animation: pulse 1.4s infinite; }
+  .status-dot.error { background: var(--bad); }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  textarea, input[type=text] {
+    width: 100%;
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    color: var(--fg);
+    font-family: var(--sans);
+    font-size: 15px;
+    resize: vertical;
+    line-height: 1.5;
+  }
+  textarea:focus, input:focus { outline: none; border-color: var(--accent); }
+  textarea { min-height: 60px; }
+
+  button {
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: transform 0.1s, background 0.15s;
+  }
+  button:hover:not(:disabled) { background: var(--accent-2); transform: translateY(-1px); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .two-input-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  @media (max-width: 720px) { .two-input-grid { grid-template-columns: 1fr; } }
+  .input-group label {
+    display: block;
+    font-size: 12px;
+    font-family: var(--mono);
+    color: var(--fg-dim);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  #sim-result {
+    margin-top: 16px;
+    padding: 20px;
+    background: var(--bg-3);
+    border-radius: 8px;
+    min-height: 80px;
+  }
+  #sim-result .big-num {
+    font-family: var(--mono);
+    font-size: 40px;
+    font-weight: 600;
+    color: var(--accent);
+  }
+  #sim-result .verdict {
+    margin-top: 8px;
+    color: var(--fg-dim);
+    font-size: 14px;
+  }
+
+  .vector-preview {
+    margin-top: 12px;
+    padding: 10px;
+    background: var(--bg);
+    border-radius: 6px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--fg-dim);
+    overflow-x: auto;
+    white-space: nowrap;
+    border: 1px solid var(--border);
+  }
+
+  /* ── semantic search ─────────────────────── */
+  .corpus-item {
+    display: grid;
+    grid-template-columns: 1fr 120px 64px;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: var(--bg-3);
+    margin-bottom: 8px;
+    font-size: 14px;
+    transition: background 0.3s;
+  }
+  .corpus-item.top { background: rgba(158,206,106,0.08); border: 1px solid rgba(158,206,106,0.2); }
+  .corpus-item .sim-mini-bar {
+    height: 6px;
+    background: var(--bg);
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+  }
+  .corpus-item .sim-mini-bar .fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    background: var(--accent);
+    transition: width 0.3s;
+  }
+  .corpus-item .score {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--fg-dim);
+    text-align: right;
+  }
+  .corpus-item.top .score { color: var(--good); }
+  .search-controls {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .search-controls input { flex: 1; }
+
+  /* ── limitations / traps ─────────────────────── */
+  .trap-pair {
+    display: grid;
+    grid-template-columns: 1fr 130px;
+    gap: 16px;
+    align-items: center;
+    padding: 14px 16px;
+    background: var(--bg-3);
+    border-radius: 8px;
+    margin-bottom: 10px;
+    border: 1px solid transparent;
+    transition: border-color 0.2s;
+  }
+  .trap-pair.computed { border-color: rgba(224,175,104,0.3); }
+  .trap-pair .sentences { font-size: 14px; line-height: 1.55; }
+  .trap-pair .sentences .a { color: var(--bad); font-family: var(--mono); font-size: 13px; }
+  .trap-pair .sentences .b { color: var(--accent); font-family: var(--mono); font-size: 13px; }
+  .trap-pair .sentences .note { color: var(--fg-dimmer); font-size: 12px; margin-top: 6px; font-style: italic; }
+  .trap-pair .score-side { text-align: center; }
+  .trap-pair .score-side .num {
+    font-family: var(--mono);
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--fg-dimmer);
+    margin-bottom: 6px;
+  }
+  .trap-pair.computed .score-side .num { color: var(--warn); }
+  .trap-pair .score-side button {
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid var(--border);
+    font-size: 12px;
+    padding: 5px 12px;
+    width: 100%;
+  }
+  .trap-pair .score-side button:hover:not(:disabled) {
+    background: var(--accent);
+    color: var(--bg);
+  }
+
+  /* ── applications ─────────────────────── */
+  .app-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 14px;
+    margin-top: 20px;
+  }
+  .app-card {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+  .app-card h4 {
+    margin: 0 0 8px;
+    font-size: 15px;
+    color: var(--accent);
+  }
+  .app-card p {
+    margin: 0;
+    font-size: 14px;
+    color: var(--fg-dim);
+  }
+
+  /* ── footer ─────────────────────── */
+  footer {
+    padding: 40px 0 60px;
+    color: var(--fg-dimmer);
+    font-size: 13px;
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+
+  /* mono expressions */
+  .formula {
+    font-family: var(--mono);
+    background: var(--bg-3);
+    padding: 14px 18px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    margin: 14px 0;
+    font-size: 14px;
+    color: var(--accent-3);
+    overflow-x: auto;
+  }
+
+  /* ── knowledge-base back link ─────────────────── */
+  .kb-back {
+    border-bottom: 1px solid var(--border);
+    padding: 14px 24px;
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  .kb-back a {
+    color: var(--fg-dimmer);
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+  .kb-back a:hover { color: var(--accent); }
+  .kb-back .arr { color: var(--accent); margin-right: 6px; }
+
+</style>
+</head>
+<body>
+
+<nav class="kb-back"><a href="/"><span class="arr">←</span>aaabramov / knowledge base</a></nav>
+
+<!-- ═══ HERO ═══ -->
+<header>
+  <div class="container">
+    <h1>Embeddings,<br/>visually.</h1>
+    <p class="tagline">
+      An interactive playground for understanding how machines turn
+      <em>words</em> into <em>numbers</em> — and why those numbers capture meaning.
+    </p>
+    <div class="hero-meta">
+      <span>runs entirely in your browser</span>
+      <span>real model: all-MiniLM-L6-v2</span>
+      <span>no server, no API keys</span>
+    </div>
+  </div>
+</header>
+
+<!-- ═══ 1. THE CORE IDEA ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">01 · The core idea</div>
+    <h2>An embedding is a list of numbers that represents meaning.</h2>
+    <p class="lede">
+      Computers can't reason about the word <em>"cat"</em> directly — they only understand numbers.
+      So we convert each word (or sentence, image, product, song…) into a fixed-length list of numbers
+      called a <strong>vector</strong>. The trick is: we train the conversion so that things with similar
+      meaning end up with similar numbers.
+    </p>
+
+    <div class="vector-demo">
+      <div class="word-in">cat</div>
+      <div class="arrow">→</div>
+      <div class="vector-out" id="demo-vec">[ <span class="p">0.21</span>, <span class="n">−0.48</span>, <span class="p">0.67</span>, <span class="n">−0.02</span>, <span class="p">0.35</span>, <span class="n">−0.81</span>, <span class="p">0.14</span>, ... <span style="color:var(--fg-dimmer)">(384 numbers total)</span> ]</div>
+    </div>
+
+    <div class="callout">
+      <strong>Each number is a "dimension".</strong> You can think of each dimension as a hidden
+      semantic axis the model learned — maybe one roughly captures "is it alive?", another
+      "is it a fruit?", another "is it formal language?". Real dimensions are usually not
+      that interpretable, but the geometry they create is.
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 2. WHY VECTORS? ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">02 · Why vectors?</div>
+    <h2>So we can measure <em>how close</em> two things are in meaning.</h2>
+    <p class="lede">
+      Old-school search matches keywords: if your query doesn't contain the exact word,
+      you miss relevant results. Embeddings match <em>meaning</em>.
+    </p>
+
+    <div class="compare">
+      <div class="card">
+        <div class="label-bad">Keyword search</div>
+        <h3>Exact words only</h3>
+        <div class="query">query: "how to fix a flat tire"</div>
+        <p class="match">✓ "how to fix a flat tire"</p>
+        <p class="miss">✗ "my bike has a puncture, help"</p>
+        <p class="miss">✗ "deflated wheel repair guide"</p>
+        <p style="color:var(--fg-dim);font-size:14px;margin-top:14px">
+          The words don't overlap, so the results are missed — even though they're <em>obviously</em> the same topic.
+        </p>
+      </div>
+      <div class="card">
+        <div class="label-good">Embedding search</div>
+        <h3>Meaning-based</h3>
+        <div class="query">query: "how to fix a flat tire"</div>
+        <p class="match">✓ "how to fix a flat tire"</p>
+        <p class="match">✓ "my bike has a puncture, help"</p>
+        <p class="match">✓ "deflated wheel repair guide"</p>
+        <p style="color:var(--fg-dim);font-size:14px;margin-top:14px">
+          All three vectors land in roughly the same region of vector space, so
+          they all score as highly similar to the query.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 3. 2D PLAYGROUND ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">03 · The geometry</div>
+    <h2>Similar meanings cluster together in vector space.</h2>
+    <p class="lede">
+      Real embeddings have hundreds of dimensions, which is impossible to visualize.
+      But the same principle holds in 2D. Below is a hand-placed toy embedding of 30
+      everyday words. <strong>Click any word</strong> — its 3 nearest neighbors will light up.
+    </p>
+
+    <div id="scatter-wrap">
+      <canvas id="scatter"></canvas>
+      <div id="scatter-info">
+        <strong>Click a word</strong> to see its nearest neighbors.<br/>
+        Distance = difference in meaning.
+      </div>
+    </div>
+    <div class="legend">
+      <span><span class="dot" style="background:#7aa2f7"></span>animals</span>
+      <span><span class="dot" style="background:#bb9af7"></span>fruits</span>
+      <span><span class="dot" style="background:#7dcfff"></span>vehicles</span>
+      <span><span class="dot" style="background:#9ece6a"></span>emotions</span>
+      <span><span class="dot" style="background:#e0af68"></span>tech</span>
+    </div>
+
+    <div class="callout" style="margin-top:28px">
+      <strong>Notice what's happening.</strong>
+      Words within a category (e.g. all animals) group together. Words <em>between</em>
+      related categories live in the space between them. In a real 300+ dimension model,
+      the clustering captures subtler axes too: tense, sentiment, formality, topic, and more.
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 4. COSINE SIMILARITY ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">04 · Measuring similarity</div>
+    <h2>The metric of choice: cosine similarity.</h2>
+    <p class="lede">
+      How do we numerically compare two vectors? We look at the <strong>angle</strong>
+      between them. Two vectors pointing in the same direction are similar; pointing
+      opposite ways means opposite meaning; perpendicular means unrelated.
+    </p>
+
+    <div class="formula">cos(θ) = (A · B) / (‖A‖ × ‖B‖)</div>
+
+    <p>
+      The result ranges from <strong style="color:var(--bad)">−1</strong> (opposite) to
+      <strong style="color:var(--warn)">0</strong> (unrelated) to
+      <strong style="color:var(--good)">+1</strong> (identical direction).
+      Drag the red and blue arrow tips below to see how the angle changes the similarity.
+    </p>
+
+    <div class="cosine-layout">
+      <svg id="cosine-svg" viewBox="0 0 500 400"></svg>
+      <div class="cosine-stats">
+        <div class="row"><span class="label">Vector A</span><span class="value" id="cs-a">(1.0, 0.0)</span></div>
+        <div class="row"><span class="label">Vector B</span><span class="value" id="cs-b">(0.0, 1.0)</span></div>
+        <div class="row"><span class="label">A · B</span><span class="value" id="cs-dot">0.00</span></div>
+        <div class="row"><span class="label">‖A‖</span><span class="value" id="cs-ma">1.00</span></div>
+        <div class="row"><span class="label">‖B‖</span><span class="value" id="cs-mb">1.00</span></div>
+        <div class="row"><span class="label">angle</span><span class="value" id="cs-angle">90°</span></div>
+        <div class="row" style="font-size:15px"><span class="label" style="color:var(--fg)">cosine similarity</span><span class="value" id="cs-sim" style="color:var(--accent)">0.00</span></div>
+        <div class="sim-bar">
+          <div class="fill" id="cs-bar" style="width:50%"></div>
+          <div class="sim-bar-center"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--fg-dimmer);margin-top:4px">
+          <span>−1</span><span>0</span><span>+1</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 5. REAL EMBEDDINGS ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">05 · The real thing</div>
+    <h2>Run an actual embedding model in your browser.</h2>
+    <p class="lede">
+      Everything above was toy data. Now let's use a real model:
+      <code>all-MiniLM-L6-v2</code> — it converts any sentence into a 384-dimensional
+      vector. The model (~25 MB) loads once, then runs locally. No API calls.
+    </p>
+
+    <div class="model-status" id="model-status">
+      <span class="status-dot loading" id="model-dot"></span>
+      <span id="model-msg">Loading model… (~25 MB, one-time download, will be cached by your browser)</span>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0">Compare any two sentences</h3>
+      <div class="two-input-grid">
+        <div class="input-group">
+          <label>Sentence A</label>
+          <textarea id="sentA">The cat sat on the mat.</textarea>
+        </div>
+        <div class="input-group">
+          <label>Sentence B</label>
+          <textarea id="sentB">A feline was resting on a rug.</textarea>
+        </div>
+      </div>
+      <button id="compute-sim" disabled>Compute similarity</button>
+
+      <div id="sim-result" style="display:none">
+        <div class="big-num" id="sim-num">—</div>
+        <div class="verdict" id="sim-verdict">—</div>
+        <div class="vector-preview" id="vec-a-preview"></div>
+        <div class="vector-preview" id="vec-b-preview"></div>
+      </div>
+
+      <p style="color:var(--fg-dim);font-size:14px;margin-top:18px;margin-bottom:0">
+        Try: different phrasings of the same idea, same words in different orders, antonyms,
+        different languages, or totally unrelated sentences. Watch the score change.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 6. SEMANTIC SEARCH ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">06 · Practical demo</div>
+    <h2>Semantic search: the killer app.</h2>
+    <p class="lede">
+      This is the pattern behind RAG, modern search, and recommendation engines:
+      pre-embed a corpus, embed the query, return the closest matches. Type any query
+      below and watch the 10 sentences re-rank themselves live.
+    </p>
+
+    <div class="card">
+      <div class="search-controls">
+        <input type="text" id="search-query" placeholder='try: "programming languages" or "things you eat"' disabled />
+        <button id="search-btn" disabled>Search</button>
+      </div>
+      <div id="search-results"></div>
+      <p style="color:var(--fg-dim);font-size:13px;margin-top:14px;margin-bottom:0">
+        Notice: you don't need to use any words from the sentences themselves —
+        the query matches on <em>meaning</em>. This is what makes embeddings so powerful.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 7. LIMITATIONS ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">07 · An important gotcha</div>
+    <h2>What embeddings <em>don't</em> capture.</h2>
+    <p class="lede">
+      Cosine similarity tells you two sentences are about the <strong>same topic</strong> —
+      not that they <strong>agree</strong>. Many opposites, negations, and reversals score
+      surprisingly high. Click any pair below and see for yourself.
+    </p>
+
+    <div class="card">
+      <div id="traps-grid"></div>
+
+      <p style="color:var(--fg-dim);font-size:14px;margin-top:20px;margin-bottom:10px">
+        <strong style="color:var(--fg)">Why?</strong> A sentence embedding pools every token's vector.
+        <code>"I am a ___ person"</code> shares the overwhelming majority of tokens in both
+        sentences, and words like <em>dog</em> / <em>cat</em> or <em>love</em> / <em>hate</em>
+        are themselves close in embedding space — they appear in similar contexts during training.
+        The model sees <em>"a statement on the same topic"</em>, not <em>"two opposing opinions"</em>.
+      </p>
+      <p style="color:var(--fg-dim);font-size:14px;margin:0">
+        <strong style="color:var(--fg)">The practical rule:</strong> for sentiment, stance, or negation,
+        don't use cosine similarity. Reach for a classifier, an NLI model, or an LLM.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 8. APPLICATIONS ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">08 · Where they shine</div>
+    <h2>Embeddings show up everywhere.</h2>
+    <p class="lede">
+      Once you have a way to turn anything into a vector, you unlock a whole
+      toolbox of vector-space operations: searching, clustering, classifying, ranking…
+    </p>
+
+    <div class="app-grid">
+      <div class="app-card">
+        <h4>Semantic search</h4>
+        <p>Find documents that <em>mean</em> the same as the query, not just share words.</p>
+      </div>
+      <div class="app-card">
+        <h4>RAG (retrieval-augmented generation)</h4>
+        <p>Give an LLM just the relevant chunks from a big knowledge base by embedding both and retrieving top-k.</p>
+      </div>
+      <div class="app-card">
+        <h4>Classification</h4>
+        <p>Compare an item's vector to label prototypes — zero training required.</p>
+      </div>
+      <div class="app-card">
+        <h4>Clustering / topic discovery</h4>
+        <p>Run k-means on vectors to automatically group similar items.</p>
+      </div>
+      <div class="app-card">
+        <h4>Recommendations</h4>
+        <p>Embed users and items in the same space; recommend the nearest items.</p>
+      </div>
+      <div class="app-card">
+        <h4>Deduplication</h4>
+        <p>Spot near-duplicate content even when wording, order, or language differs.</p>
+      </div>
+      <div class="app-card">
+        <h4>Anomaly detection</h4>
+        <p>Items far from any cluster are outliers — useful for spam, fraud, QA.</p>
+      </div>
+      <div class="app-card">
+        <h4>Cross-modal search</h4>
+        <p>Models like CLIP embed images and text into the <em>same</em> space — search images with words.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 9. GOING DEEPER ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">09 · Takeaways</div>
+    <h2>The mental model, in one breath.</h2>
+    <p class="lede">
+      An embedding model is a function that maps inputs into a geometric space where
+      <strong>distance means difference in meaning</strong>. Once you have that, almost
+      anything "fuzzy" becomes a math problem: compare, rank, group, recommend, retrieve.
+    </p>
+
+    <div class="card">
+      <h3 style="margin-top:0">A few things to remember</h3>
+      <ul style="color:var(--fg-dim);padding-left:20px;line-height:1.9">
+        <li>Embeddings from <em>different models</em> are not comparable — always use the same model for a given comparison.</li>
+        <li>More dimensions ≠ always better. 384-dim is standard; 1536 (OpenAI) captures more nuance but costs more to store.</li>
+        <li>Always <strong>normalize</strong> your vectors (unit length) when using cosine similarity — many libraries do this automatically.</li>
+        <li>For speed at scale, store vectors in a <strong>vector database</strong> (Pinecone, Weaviate, pgvector, Qdrant) with approximate-nearest-neighbor indexes.</li>
+        <li>The same math applies to images, audio, code, user behavior, graph nodes… anything you can train an encoder for.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    Built with <code style="color:var(--accent)">transformers.js</code> running
+    <code style="color:var(--accent)">all-MiniLM-L6-v2</code> from Hugging Face.
+    All computation happens in your browser — your text never leaves your machine.
+  </div>
+</footer>
+
+<!-- ═══════════════════════════════════════════════════════════
+     SCRIPT
+     ═══════════════════════════════════════════════════════════ -->
+<script type="module">
+
+// ────────────────────────────────────────────────────────────
+// 1. 2D SCATTER PLAYGROUND (hand-crafted demo embeddings)
+// ────────────────────────────────────────────────────────────
+
+const CATEGORIES = {
+  animals:  { color: '#7aa2f7' },
+  fruits:   { color: '#bb9af7' },
+  vehicles: { color: '#7dcfff' },
+  emotions: { color: '#9ece6a' },
+  tech:     { color: '#e0af68' },
+};
+
+// Hand-placed 2D embeddings (x, y). Designed so semantically related
+// words cluster and categories occupy different regions.
+const WORDS = [
+  // animals (upper-left)
+  { w: 'cat',      c: 'animals',  x: -4.2, y:  3.4 },
+  { w: 'dog',      c: 'animals',  x: -3.5, y:  3.6 },
+  { w: 'horse',    c: 'animals',  x: -4.6, y:  2.6 },
+  { w: 'cow',      c: 'animals',  x: -4.0, y:  2.1 },
+  { w: 'lion',     c: 'animals',  x: -3.1, y:  4.2 },
+  { w: 'tiger',    c: 'animals',  x: -2.6, y:  3.9 },
+  // fruits (upper-right)
+  { w: 'apple',    c: 'fruits',   x:  3.0, y:  3.1 },
+  { w: 'banana',   c: 'fruits',   x:  3.6, y:  3.4 },
+  { w: 'orange',   c: 'fruits',   x:  4.2, y:  3.7 },
+  { w: 'grape',    c: 'fruits',   x:  3.1, y:  4.1 },
+  { w: 'strawberry', c:'fruits',  x:  3.7, y:  4.3 },
+  { w: 'lemon',    c: 'fruits',   x:  4.4, y:  3.0 },
+  // vehicles (lower-left)
+  { w: 'car',      c: 'vehicles', x: -3.0, y: -3.0 },
+  { w: 'truck',    c: 'vehicles', x: -3.5, y: -3.5 },
+  { w: 'bus',      c: 'vehicles', x: -2.5, y: -3.2 },
+  { w: 'bike',     c: 'vehicles', x: -3.0, y: -4.1 },
+  { w: 'plane',    c: 'vehicles', x: -4.0, y: -3.0 },
+  { w: 'train',    c: 'vehicles', x: -4.0, y: -3.6 },
+  { w: 'boat',     c: 'vehicles', x: -4.5, y: -2.5 },
+  // emotions (lower-right)
+  { w: 'happy',    c: 'emotions', x:  3.0, y: -3.0 },
+  { w: 'sad',      c: 'emotions', x:  4.0, y: -3.5 },
+  { w: 'angry',    c: 'emotions', x:  3.5, y: -4.0 },
+  { w: 'excited',  c: 'emotions', x:  2.5, y: -3.0 },
+  { w: 'calm',     c: 'emotions', x:  4.2, y: -2.5 },
+  { w: 'anxious',  c: 'emotions', x:  3.7, y: -4.2 },
+  // tech (center)
+  { w: 'computer', c: 'tech',     x:  0.0, y:  0.5 },
+  { w: 'laptop',   c: 'tech',     x: -0.4, y:  0.9 },
+  { w: 'phone',    c: 'tech',     x:  0.6, y:  0.0 },
+  { w: 'keyboard', c: 'tech',     x:  0.1, y: -0.6 },
+  { w: 'screen',   c: 'tech',     x: -0.5, y: -0.2 },
+];
+
+const scatter = document.getElementById('scatter');
+const sctx    = scatter.getContext('2d');
+const info    = document.getElementById('scatter-info');
+
+function resizeScatter() {
+  const r = scatter.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  scatter.width  = r.width  * dpr;
+  scatter.height = r.height * dpr;
+  sctx.setTransform(1,0,0,1,0,0);
+  sctx.scale(dpr, dpr);
+  drawScatter();
+}
+window.addEventListener('resize', resizeScatter);
+
+let selected = null;
+let highlighted = new Set();
+
+function dataToPixel(x, y) {
+  const r = scatter.getBoundingClientRect();
+  const pad = 40;
+  // x range: -6 .. 6, y range: -5 .. 5 (y flipped in canvas)
+  const px = pad + ((x + 6) / 12) * (r.width  - 2 * pad);
+  const py = pad + ((5 - y) / 10) * (r.height - 2 * pad);
+  return [px, py];
+}
+function pixelToData(px, py) {
+  const r = scatter.getBoundingClientRect();
+  const pad = 40;
+  const x = ((px - pad) / (r.width  - 2 * pad)) * 12 - 6;
+  const y = 5 - ((py - pad) / (r.height - 2 * pad)) * 10;
+  return [x, y];
+}
+
+function drawScatter() {
+  const r = scatter.getBoundingClientRect();
+  sctx.clearRect(0, 0, r.width, r.height);
+
+  // subtle grid
+  sctx.strokeStyle = '#1c2232';
+  sctx.lineWidth = 1;
+  for (let gx = -6; gx <= 6; gx++) {
+    const [px] = dataToPixel(gx, 0);
+    sctx.beginPath();
+    sctx.moveTo(px, 0); sctx.lineTo(px, r.height);
+    sctx.stroke();
+  }
+  for (let gy = -5; gy <= 5; gy++) {
+    const [, py] = dataToPixel(0, gy);
+    sctx.beginPath();
+    sctx.moveTo(0, py); sctx.lineTo(r.width, py);
+    sctx.stroke();
+  }
+
+  // connection lines to highlighted neighbors
+  if (selected) {
+    const [sx, sy] = dataToPixel(selected.x, selected.y);
+    for (const hw of highlighted) {
+      const [hx, hy] = dataToPixel(hw.x, hw.y);
+      sctx.strokeStyle = 'rgba(122,162,247,0.5)';
+      sctx.lineWidth = 1.5;
+      sctx.setLineDash([4, 3]);
+      sctx.beginPath();
+      sctx.moveTo(sx, sy); sctx.lineTo(hx, hy);
+      sctx.stroke();
+      sctx.setLineDash([]);
+    }
+  }
+
+  // points
+  for (const p of WORDS) {
+    const [x, y] = dataToPixel(p.x, p.y);
+    const color = CATEGORIES[p.c].color;
+    const isSelected = selected === p;
+    const isHighlighted = highlighted.has(p);
+    const dim = selected && !isSelected && !isHighlighted;
+
+    sctx.globalAlpha = dim ? 0.25 : 1.0;
+
+    sctx.fillStyle = color;
+    sctx.beginPath();
+    sctx.arc(x, y, isSelected ? 8 : isHighlighted ? 6 : 5, 0, Math.PI * 2);
+    sctx.fill();
+
+    if (isSelected) {
+      sctx.strokeStyle = '#fff';
+      sctx.lineWidth = 2;
+      sctx.stroke();
+    }
+
+    sctx.fillStyle = dim ? '#5f6a7d' : '#e6edf3';
+    sctx.font = (isSelected ? 'bold 13px ' : '12px ') + 'var(--sans), system-ui';
+    sctx.textAlign = 'left';
+    sctx.textBaseline = 'middle';
+    sctx.fillText(p.w, x + 9, y);
+  }
+  sctx.globalAlpha = 1.0;
+}
+
+function dist(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+scatter.addEventListener('click', (e) => {
+  const r = scatter.getBoundingClientRect();
+  const px = e.clientX - r.left;
+  const py = e.clientY - r.top;
+  const [dx, dy] = pixelToData(px, py);
+
+  // find nearest word within radius
+  let best = null, bestD = Infinity;
+  for (const p of WORDS) {
+    const d = Math.hypot(p.x - dx, p.y - dy);
+    if (d < bestD) { bestD = d; best = p; }
+  }
+  if (best && bestD < 1.2) {
+    selected = best;
+    const others = WORDS.filter(w => w !== best);
+    others.sort((a, b) => dist(a, best) - dist(b, best));
+    highlighted = new Set(others.slice(0, 3));
+    const neighbors = Array.from(highlighted).map(n => `<b>${n.w}</b>`).join(', ');
+    info.innerHTML = `Selected <strong>${best.w}</strong><br/>Nearest neighbors: ${neighbors}`;
+  } else {
+    selected = null;
+    highlighted = new Set();
+    info.innerHTML = '<strong>Click a word</strong> to see its nearest neighbors.<br/>Distance = difference in meaning.';
+  }
+  drawScatter();
+});
+
+resizeScatter();
+
+
+// ────────────────────────────────────────────────────────────
+// 2. COSINE SIMILARITY PLAYGROUND
+// ────────────────────────────────────────────────────────────
+
+const csvg = document.getElementById('cosine-svg');
+const ORIGIN = { x: 250, y: 200 };
+let vecA = { x: 140, y: 0 };   // pointing right
+let vecB = { x: 0,   y: -140 }; // pointing up
+let dragging = null;
+
+function renderCosine() {
+  const ax = ORIGIN.x + vecA.x;
+  const ay = ORIGIN.y + vecA.y;
+  const bx = ORIGIN.x + vecB.x;
+  const by = ORIGIN.y + vecB.y;
+
+  // svg bits
+  csvg.innerHTML = `
+    <defs>
+      <marker id="ah-a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+        <path d="M0,0 L10,5 L0,10 z" fill="#f7768e"/>
+      </marker>
+      <marker id="ah-b" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+        <path d="M0,0 L10,5 L0,10 z" fill="#7aa2f7"/>
+      </marker>
+    </defs>
+    <!-- grid -->
+    <g stroke="#1c2232" stroke-width="1">
+      ${Array.from({length: 11}, (_, i) =>
+        `<line x1="${i*50}" y1="0" x2="${i*50}" y2="400"/>`).join('')}
+      ${Array.from({length: 9}, (_, i) =>
+        `<line x1="0" y1="${i*50}" x2="500" y2="${i*50}"/>`).join('')}
+    </g>
+    <line x1="0" y1="${ORIGIN.y}" x2="500" y2="${ORIGIN.y}" stroke="#2a3142" stroke-width="1.5"/>
+    <line x1="${ORIGIN.x}" y1="0" x2="${ORIGIN.x}" y2="400" stroke="#2a3142" stroke-width="1.5"/>
+
+    <!-- angle arc -->
+    ${renderArc(vecA, vecB)}
+
+    <!-- vector A (red) -->
+    <line x1="${ORIGIN.x}" y1="${ORIGIN.y}" x2="${ax}" y2="${ay}"
+          stroke="#f7768e" stroke-width="3" marker-end="url(#ah-a)"/>
+    <circle cx="${ax}" cy="${ay}" r="10" fill="#f7768e" fill-opacity="0.3" stroke="#f7768e" stroke-width="2"
+            data-handle="A" style="cursor:grab"/>
+    <text x="${ax + 14}" y="${ay - 8}" fill="#f7768e" font-family="var(--mono)" font-size="14" font-weight="700">A</text>
+
+    <!-- vector B (blue) -->
+    <line x1="${ORIGIN.x}" y1="${ORIGIN.y}" x2="${bx}" y2="${by}"
+          stroke="#7aa2f7" stroke-width="3" marker-end="url(#ah-b)"/>
+    <circle cx="${bx}" cy="${by}" r="10" fill="#7aa2f7" fill-opacity="0.3" stroke="#7aa2f7" stroke-width="2"
+            data-handle="B" style="cursor:grab"/>
+    <text x="${bx + 14}" y="${by - 8}" fill="#7aa2f7" font-family="var(--mono)" font-size="14" font-weight="700">B</text>
+
+    <!-- origin -->
+    <circle cx="${ORIGIN.x}" cy="${ORIGIN.y}" r="3" fill="#5f6a7d"/>
+  `;
+
+  // attach drag handlers to the handles
+  csvg.querySelectorAll('[data-handle]').forEach(el => {
+    el.addEventListener('mousedown', (e) => { dragging = el.dataset.handle; e.preventDefault(); });
+    el.addEventListener('touchstart', (e) => { dragging = el.dataset.handle; e.preventDefault(); }, { passive: false });
+  });
+
+  // update stats
+  // note: svg y is flipped (down is positive); use -y for "math" y
+  const Ax = vecA.x, Ay = -vecA.y;
+  const Bx = vecB.x, By = -vecB.y;
+  const dot = Ax * Bx + Ay * By;
+  const magA = Math.hypot(Ax, Ay);
+  const magB = Math.hypot(Bx, By);
+  const cos = (magA && magB) ? dot / (magA * magB) : 0;
+  const angleDeg = Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI;
+
+  const norm = v => (v / 100).toFixed(2);
+  document.getElementById('cs-a').textContent = `(${norm(Ax)}, ${norm(Ay)})`;
+  document.getElementById('cs-b').textContent = `(${norm(Bx)}, ${norm(By)})`;
+  document.getElementById('cs-dot').textContent = (dot / 10000).toFixed(2);
+  document.getElementById('cs-ma').textContent  = (magA / 100).toFixed(2);
+  document.getElementById('cs-mb').textContent  = (magB / 100).toFixed(2);
+  document.getElementById('cs-angle').textContent = angleDeg.toFixed(1) + '°';
+
+  const simEl = document.getElementById('cs-sim');
+  simEl.textContent = cos.toFixed(3);
+  // color the sim
+  if      (cos > 0.5)  simEl.style.color = 'var(--good)';
+  else if (cos < -0.5) simEl.style.color = 'var(--bad)';
+  else if (Math.abs(cos) < 0.2) simEl.style.color = 'var(--warn)';
+  else                 simEl.style.color = 'var(--accent)';
+
+  // bar position
+  document.getElementById('cs-bar').style.width = ((cos + 1) / 2 * 100) + '%';
+}
+
+function renderArc(a, b) {
+  const magA = Math.hypot(a.x, a.y), magB = Math.hypot(b.x, b.y);
+  if (magA === 0 || magB === 0) return '';
+  const r = 40;
+  const a1 = Math.atan2(a.y, a.x); // svg coords
+  const a2 = Math.atan2(b.y, b.x);
+  let delta = a2 - a1;
+  // normalize to -PI..PI, pick shorter arc
+  while (delta >  Math.PI) delta -= 2 * Math.PI;
+  while (delta < -Math.PI) delta += 2 * Math.PI;
+  const end = a1 + delta;
+  const sx = ORIGIN.x + r * Math.cos(a1);
+  const sy = ORIGIN.y + r * Math.sin(a1);
+  const ex = ORIGIN.x + r * Math.cos(end);
+  const ey = ORIGIN.y + r * Math.sin(end);
+  const sweep = delta > 0 ? 1 : 0;
+  return `<path d="M ${sx} ${sy} A ${r} ${r} 0 0 ${sweep} ${ex} ${ey}"
+           fill="none" stroke="#bb9af7" stroke-width="2" stroke-dasharray="4,3"/>`;
+}
+
+function handleMove(clientX, clientY) {
+  if (!dragging) return;
+  const r = csvg.getBoundingClientRect();
+  // svg viewBox is 500x400, map client coords to viewbox
+  const x = (clientX - r.left) * (500 / r.width)  - ORIGIN.x;
+  const y = (clientY - r.top)  * (400 / r.height) - ORIGIN.y;
+  const v = { x, y };
+  if (dragging === 'A') vecA = v;
+  else if (dragging === 'B') vecB = v;
+  renderCosine();
+}
+window.addEventListener('mousemove', e => handleMove(e.clientX, e.clientY));
+window.addEventListener('mouseup', () => { dragging = null; });
+window.addEventListener('touchmove', e => {
+  if (!dragging) return;
+  const t = e.touches[0];
+  handleMove(t.clientX, t.clientY);
+  e.preventDefault();
+}, { passive: false });
+window.addEventListener('touchend', () => { dragging = null; });
+
+renderCosine();
+
+
+// ────────────────────────────────────────────────────────────
+// 3. REAL EMBEDDINGS with transformers.js
+// ────────────────────────────────────────────────────────────
+
+const statusDot = document.getElementById('model-dot');
+const statusMsg = document.getElementById('model-msg');
+const btnSim = document.getElementById('compute-sim');
+const btnSearch = document.getElementById('search-btn');
+const searchInput = document.getElementById('search-query');
+
+let extractor = null;
+
+async function loadModel() {
+  try {
+    const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2');
+    env.allowLocalModels = false;
+    env.useBrowserCache = true;
+
+    statusMsg.textContent = 'Downloading model (first time only — will be cached)...';
+    extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
+      progress_callback: (p) => {
+        if (p.status === 'progress' && p.file && p.total) {
+          const pct = ((p.loaded / p.total) * 100).toFixed(0);
+          statusMsg.textContent = `Downloading ${p.file} — ${pct}%`;
+        } else if (p.status === 'ready') {
+          statusMsg.textContent = 'Model ready.';
+        }
+      }
+    });
+    statusDot.classList.remove('loading');
+    statusDot.classList.add('ready');
+    statusMsg.textContent = 'Model ready — 384-dim vectors running locally in your browser.';
+    btnSim.disabled = false;
+    btnSearch.disabled = false;
+    searchInput.disabled = false;
+    document.querySelectorAll('[data-compute]').forEach(b => b.disabled = false);
+    precomputeCorpus();
+  } catch (err) {
+    console.error(err);
+    statusDot.classList.remove('loading');
+    statusDot.classList.add('error');
+    statusMsg.textContent = 'Failed to load model: ' + err.message;
+  }
+}
+
+async function embed(text) {
+  const out = await extractor(text, { pooling: 'mean', normalize: true });
+  return Array.from(out.data);
+}
+
+function cosineSim(a, b) {
+  let dot = 0, ma = 0, mb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    ma  += a[i] * a[i];
+    mb  += b[i] * b[i];
+  }
+  return dot / (Math.sqrt(ma) * Math.sqrt(mb));
+}
+
+function formatVec(v) {
+  const head = v.slice(0, 8).map(n => (n >= 0 ? '+' : '') + n.toFixed(3)).join(', ');
+  return `[ ${head}, ... ] <span style="color:var(--fg-dimmer)">(${v.length} dimensions)</span>`;
+}
+
+btnSim.addEventListener('click', async () => {
+  const a = document.getElementById('sentA').value.trim();
+  const b = document.getElementById('sentB').value.trim();
+  if (!a || !b) return;
+  btnSim.disabled = true;
+  btnSim.textContent = 'Computing...';
+  try {
+    const [va, vb] = await Promise.all([embed(a), embed(b)]);
+    const sim = cosineSim(va, vb);
+    document.getElementById('sim-result').style.display = 'block';
+    const num = document.getElementById('sim-num');
+    num.textContent = sim.toFixed(3);
+    if      (sim > 0.75) num.style.color = 'var(--good)';
+    else if (sim > 0.5)  num.style.color = 'var(--accent)';
+    else if (sim > 0.3)  num.style.color = 'var(--warn)';
+    else                 num.style.color = 'var(--bad)';
+
+    let verdict;
+    if      (sim > 0.85) verdict = 'Nearly identical meaning.';
+    else if (sim > 0.65) verdict = 'Very related.';
+    else if (sim > 0.45) verdict = 'Somewhat related.';
+    else if (sim > 0.25) verdict = 'Weakly related — share a topic at best.';
+    else                 verdict = 'Essentially unrelated.';
+    document.getElementById('sim-verdict').textContent = verdict;
+
+    document.getElementById('vec-a-preview').innerHTML = '<strong>A:</strong> ' + formatVec(va);
+    document.getElementById('vec-b-preview').innerHTML = '<strong>B:</strong> ' + formatVec(vb);
+  } finally {
+    btnSim.disabled = false;
+    btnSim.textContent = 'Compute similarity';
+  }
+});
+
+
+// ────────────────────────────────────────────────────────────
+// 4. SEMANTIC SEARCH
+// ────────────────────────────────────────────────────────────
+
+const CORPUS = [
+  "Python is a versatile programming language used for data science and web development.",
+  "The sunset painted the sky in brilliant oranges and pinks over the ocean.",
+  "Pizza originated in Italy and is now one of the most popular foods worldwide.",
+  "Machine learning models learn patterns from large amounts of training data.",
+  "Dogs are known as loyal companions and have lived alongside humans for millennia.",
+  "JavaScript runs in every web browser and powers interactive websites.",
+  "Climbing Mount Everest requires months of training and extreme physical endurance.",
+  "Coffee contains caffeine, a stimulant that helps many people start their day.",
+  "The novel explores themes of love, loss, and the passage of time.",
+  "Quantum computers use qubits to perform certain calculations far faster than classical computers.",
+];
+
+let corpusVectors = [];
+const resultsEl = document.getElementById('search-results');
+
+function renderCorpus(scores) {
+  const items = CORPUS.map((text, i) => ({
+    text, score: scores ? scores[i] : null, idx: i,
+  }));
+  if (scores) items.sort((a, b) => b.score - a.score);
+
+  resultsEl.innerHTML = items.map((item, rank) => `
+    <div class="corpus-item ${rank === 0 && scores ? 'top' : ''}">
+      <div>${item.text}</div>
+      <div class="sim-mini-bar"><div class="fill" style="width:${scores ? Math.max(0, item.score) * 100 : 0}%"></div></div>
+      <div class="score">${scores ? item.score.toFixed(3) : '—'}</div>
+    </div>
+  `).join('');
+}
+
+async function precomputeCorpus() {
+  statusMsg.textContent = 'Embedding corpus...';
+  corpusVectors = [];
+  for (const t of CORPUS) corpusVectors.push(await embed(t));
+  statusMsg.textContent = 'Model ready — 384-dim vectors running locally in your browser.';
+  renderCorpus(null);
+}
+
+async function runSearch() {
+  const q = searchInput.value.trim();
+  if (!q) return;
+  btnSearch.disabled = true;
+  btnSearch.textContent = '...';
+  try {
+    const qv = await embed(q);
+    const scores = corpusVectors.map(v => cosineSim(qv, v));
+    renderCorpus(scores);
+  } finally {
+    btnSearch.disabled = false;
+    btnSearch.textContent = 'Search';
+  }
+}
+
+btnSearch.addEventListener('click', runSearch);
+searchInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') runSearch();
+});
+
+renderCorpus(null);
+
+
+// ────────────────────────────────────────────────────────────
+// 5. LIMITATION TRAPS — antonyms & negation
+// ────────────────────────────────────────────────────────────
+
+const TRAPS = [
+  {
+    a: "I am a dog person",
+    b: "I am a cat person",
+    note: "Same shape, different pet — the model sees the shared topic, not the difference in preference.",
+  },
+  {
+    a: "I love cats",
+    b: "I hate cats",
+    note: "Opposite sentiment, identical topic. Embeddings don't encode stance.",
+  },
+  {
+    a: "The stock went up today",
+    b: "The stock went down today",
+    note: "Directionally opposite facts. Nearly identical vectors.",
+  },
+  {
+    a: "The meeting is on Monday",
+    b: "The meeting is not on Monday",
+    note: "A single 'not' barely nudges the vector. Classic negation blind spot.",
+  },
+];
+
+function renderTraps() {
+  const grid = document.getElementById('traps-grid');
+  grid.innerHTML = TRAPS.map((t, i) => `
+    <div class="trap-pair" data-idx="${i}">
+      <div class="sentences">
+        <div class="a">A: "${t.a}"</div>
+        <div class="b">B: "${t.b}"</div>
+        <div class="note">${t.note}</div>
+      </div>
+      <div class="score-side">
+        <div class="num" data-num>—</div>
+        <button data-compute disabled>Compute</button>
+      </div>
+    </div>
+  `).join('');
+
+  grid.querySelectorAll('[data-compute]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!extractor) return;
+      const pair = btn.closest('.trap-pair');
+      const idx = Number(pair.dataset.idx);
+      const t = TRAPS[idx];
+      btn.disabled = true;
+      btn.textContent = '...';
+      try {
+        const [va, vb] = await Promise.all([embed(t.a), embed(t.b)]);
+        const sim = cosineSim(va, vb);
+        pair.classList.add('computed');
+        pair.querySelector('[data-num]').textContent = sim.toFixed(3);
+        btn.textContent = 'Recompute';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
+renderTraps();
+
+
+// kick off model load
+loadModel();
+
+</script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+title: aaabramov
+email: abramov.andrii@gmail.com
+description: >
+  Personal knowledge base — notes and interactive explainers.
+baseurl: ""
+url: "https://blog.iamandrii.com"
+
+twitter_username: abramov_andrii
+stackoverflow_link: https://stackoverflow.com/users/5091346/andrii-abramov
+github_username: aaabramov
+
+markdown: kramdown
+permalink: /posts/:slug/

@@ -1,0 +1,5 @@
+- slug: embeddings
+  title: "Embeddings, visually"
+  subtitle: "An interactive playground for how machines turn words into numbers."
+  tags: [ml, nlp, vectors]
+  published: 2026-04-17

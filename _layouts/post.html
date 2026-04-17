@@ -1,0 +1,22 @@
+---
+layout: default
+---
+<nav class="kb-back">
+  <a href="/"><span class="arr">←</span>aaabramov / knowledge base</a>
+</nav>
+
+<article class="kb-post">
+  <header class="kb-post-header">
+    <h1 class="kb-post-title">{{ page.title }}</h1>
+    <p class="kb-post-meta">
+      <time datetime="{{ page.date | date_to_xmlschema }}">{{ page.date | date: "%b %-d, %Y" }}</time>
+      {% if page.categories and page.categories.size > 0 %}
+        · {% for cat in page.categories %}<span>{{ cat }}</span>{% unless forloop.last %}, {% endunless %}{% endfor %}
+      {% endif %}
+    </p>
+  </header>
+
+  <div class="kb-post-content">
+    {{ content }}
+  </div>
+</article>
