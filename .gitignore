@@ -1,0 +1,12 @@
+_site/
+.sass-cache/
+*.iml
+.jekyll-metadata
+.idea
+.gradle
+
+.DS_Store
+.superpowers/
+vendor/
+.bundle/
+Gemfile.lock

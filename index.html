@@ -1,0 +1,58 @@
+---
+layout: default
+---
+<section class="kb-hero">
+  <h1>Knowledge base.</h1>
+  <p>A place I keep notes and interactive explainers I build while learning — mostly for my future self, but public in case they help anyone else.</p>
+</section>
+
+{% if site.data.tutorials and site.data.tutorials.size > 0 %}
+<section class="kb-section">
+  <div class="kb-eyebrow">Tutorials</div>
+  <ul class="kb-list">
+    {% assign sorted_tutorials = site.data.tutorials | sort: 'published' | reverse %}
+    {% for t in sorted_tutorials %}
+    <li class="kb-item">
+      <a href="/tutorials/{{ t.slug }}/">
+        <div class="kb-item-head">
+          <span class="kb-item-title">{{ t.title }}</span>
+          <span class="kb-item-date">{{ t.published | date: "%b %Y" }}</span>
+        </div>
+        {% if t.subtitle %}<p class="kb-item-subtitle">{{ t.subtitle }}</p>{% endif %}
+        {% if t.tags %}
+        <div class="kb-item-tags">
+          {% for tag in t.tags %}<span class="kb-tag">{{ tag }}</span>{% endfor %}
+        </div>
+        {% endif %}
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if site.posts.size > 0 %}
+<section class="kb-section">
+  <div class="kb-eyebrow">Posts</div>
+  <ul class="kb-list">
+    {% for post in site.posts %}
+    <li class="kb-item">
+      <a href="{{ post.url | prepend: site.baseurl }}">
+        <div class="kb-item-head">
+          <span class="kb-item-title">{{ post.title }}</span>
+          <span class="kb-item-date">{{ post.date | date: "%b %Y" }}</span>
+        </div>
+        {% if post.excerpt %}
+          <p class="kb-item-subtitle">{{ post.excerpt | strip_html | strip_newlines | truncate: 140 }}</p>
+        {% endif %}
+        {% if post.categories and post.categories.size > 0 %}
+        <div class="kb-item-tags">
+          {% for cat in post.categories %}<span class="kb-tag">{{ cat }}</span>{% endfor %}
+        </div>
+        {% endif %}
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
