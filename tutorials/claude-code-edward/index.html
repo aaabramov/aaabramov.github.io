@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Code — A guide for Edward</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --accent: #1D9E75;
+    --accent-light: #E1F5EE;
+    --accent-dark: #0F6E56;
+    --bg: #ffffff;
+    --bg-secondary: #f7f7f5;
+    --text: #1a1a18;
+    --text-muted: #5f5e5a;
+    --text-faint: #888780;
+    --border: rgba(0,0,0,0.1);
+    --border-strong: rgba(0,0,0,0.2);
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --mono: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --accent: #5DCAA5;
+      --accent-light: #04342C;
+      --accent-dark: #9FE1CB;
+      --bg: #1c1c1a;
+      --bg-secondary: #252523;
+      --text: #f0ede6;
+      --text-muted: #b4b2a9;
+      --text-faint: #888780;
+      --border: rgba(255,255,255,0.1);
+      --border-strong: rgba(255,255,255,0.2);
+    }
+  }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    font-size: 16px;
+    padding: 2rem 1rem 4rem;
+  }
+
+  .guide {
+    max-width: 680px;
+    margin: 0 auto;
+  }
+
+  /* Hero */
+  .hero { margin-bottom: 2.5rem; }
+  .hero-tag {
+    display: inline-block;
+    background: var(--accent-light);
+    color: var(--accent-dark);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    padding: 4px 10px;
+    border-radius: var(--radius-md);
+    margin-bottom: 14px;
+  }
+  .hero h1 {
+    font-size: 28px;
+    font-weight: 600;
+    line-height: 1.3;
+    margin-bottom: 10px;
+    color: var(--text);
+  }
+  .hero p {
+    font-size: 16px;
+    color: var(--text-muted);
+    max-width: 560px;
+  }
+
+  /* Analogy box */
+  .analogy-box {
+    background: var(--bg-secondary);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 var(--radius-md) var(--radius-md) 0;
+    padding: 16px 18px;
+    margin: 2rem 0;
+  }
+  .analogy-box p {
+    font-size: 15px;
+    color: var(--text-muted);
+    line-height: 1.65;
+  }
+  .analogy-box strong { color: var(--text); }
+
+  /* Section */
+  .section { margin: 2.5rem 0; }
+  .section-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-faint);
+    margin-bottom: 10px;
+  }
+  .section h2 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 14px;
+    color: var(--text);
+  }
+
+  /* Cards */
+  .card {
+    background: var(--bg);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1rem 1.25rem;
+    margin-bottom: 10px;
+  }
+  .card h3 {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 5px;
+    color: var(--text);
+  }
+  .card p {
+    font-size: 14px;
+    color: var(--text-muted);
+    line-height: 1.6;
+  }
+  .card .example {
+    background: var(--bg-secondary);
+    border-radius: var(--radius-md);
+    padding: 10px 14px;
+    margin-top: 12px;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text);
+    line-height: 1.5;
+  }
+  .card .example::before {
+    content: '> ';
+    color: var(--accent);
+  }
+
+  /* Steps */
+  .steps { display: flex; flex-direction: column; gap: 16px; }
+  .step { display: flex; gap: 16px; align-items: flex-start; }
+  .step-num {
+    flex-shrink: 0;
+    width: 30px;
+    height: 30px;
+    background: var(--accent-light);
+    color: var(--accent-dark);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 600;
+    margin-top: 2px;
+  }
+  .step-body h3 {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 4px;
+    color: var(--text);
+  }
+  .step-body p {
+    font-size: 14px;
+    color: var(--text-muted);
+    line-height: 1.6;
+  }
+  code {
+    font-family: var(--mono);
+    font-size: 13px;
+    background: var(--bg-secondary);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--text);
+  }
+
+  /* Tips */
+  .tip {
+    display: flex;
+    gap: 10px;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+    margin: 8px 0;
+  }
+  .tip-icon {
+    font-size: 16px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .tip p {
+    font-size: 14px;
+    color: var(--text-muted);
+    line-height: 1.6;
+  }
+  .tip p strong { color: var(--text); }
+
+  /* Pricing */
+  .pricing-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  @media (max-width: 480px) {
+    .pricing-row { grid-template-columns: 1fr; }
+  }
+  .pricing-card {
+    background: var(--bg);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 16px;
+  }
+  .pricing-card.recommended {
+    border: 2px solid var(--accent);
+  }
+  .pricing-card h3 {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .badge {
+    font-size: 11px;
+    background: var(--accent-light);
+    color: var(--accent-dark);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+  .price {
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .price span {
+    font-size: 14px;
+    color: var(--text-muted);
+    font-weight: 400;
+  }
+  .pricing-card p {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-top: 8px;
+    line-height: 1.5;
+  }
+
+  /* Prompt grid */
+  .prompt-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .prompt-card {
+    background: var(--bg);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+  }
+  .prompt-tag {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--accent-dark);
+    background: var(--accent-light);
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-bottom: 8px;
+  }
+  .prompt-card p {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  hr {
+    border: none;
+    border-top: 0.5px solid var(--border);
+    margin: 2.5rem 0;
+  }
+
+  /* Inline links inside guide content */
+  .guide a {
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px solid var(--accent-light);
+    transition: border-color 0.15s ease;
+  }
+  .guide a:hover { border-bottom-color: var(--accent); }
+
+  /* Footer */
+  .footer {
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 0.5px solid var(--border);
+    font-size: 13px;
+    color: var(--text-faint);
+  }
+  .footer a { color: var(--accent); text-decoration: none; }
+  .footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="guide">
+
+  <div class="hero">
+    <div class="hero-tag">Hey Edward 🏸</div>
+    <h1>Claude Code, in plain English</h1>
+    <p>You kept asking me about this between rallies, so I figured I'd write it up properly. You don't need to be a software engineer to use an AI coding agent — if you've got Python scripts that misbehave or project ideas you want to try, this is for you.</p>
+  </div>
+
+  <div class="analogy-box">
+    <p><strong>Best analogy:</strong> Imagine a very skilled developer friend who lives inside your computer. You describe what you want in plain English. They read all your files, write the code, run it, fix errors, and check back with you before doing anything irreversible. That's Claude Code.</p>
+  </div>
+
+  <div class="section">
+    <div class="section-label">The basics</div>
+    <h2>What makes it different from ChatGPT?</h2>
+    <div class="card">
+      <h3>💬 ChatGPT / Claude.ai in a browser</h3>
+      <p>You paste code in, it responds with code, you copy it back out. It can't see your actual files or run anything. Every message starts fresh — it has no idea what's in your project.</p>
+    </div>
+    <div class="card">
+      <h3>⚡ Claude Code (an agent)</h3>
+      <p>It runs in your terminal and has actual access to your project folder. It can read files, write code directly into them, run commands, and fix the errors it causes. You describe the goal; it figures out the steps.</p>
+    </div>
+  </div>
+
+  <hr>
+
+  <div class="section">
+    <div class="section-label">Installation</div>
+    <h2>Getting it running</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h3>Install Node.js first</h3>
+          <p>Claude Code needs Node.js to run. Download the "LTS" version from <a href="https://nodejs.org/" target="_blank" rel="noopener">nodejs.org</a> — just a regular installer, nothing complicated. After installing, open a terminal and verify: <code>node --version</code></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h3>Install Claude Code</h3>
+          <p>In your terminal, run: <code>npm install -g @anthropic-ai/claude-code</code><br>
+          The <code>-g</code> flag makes it available system-wide, not just in one folder.<br>
+          On macOS with Homebrew: <code>brew install claude-code</code> also works.<br>
+          Package page: <a href="https://www.npmjs.com/package/@anthropic-ai/claude-code" target="_blank" rel="noopener">npmjs.com/package/@anthropic-ai/claude-code</a> · Full install docs: <a href="https://code.claude.com/docs/en/quickstart" target="_blank" rel="noopener">code.claude.com/docs/en/quickstart</a></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h3>Log in with your Anthropic account</h3>
+          <p>Navigate to your project folder: <code>cd ~/my-project</code>, then run <code>claude</code>. It'll prompt you to log in — a browser window opens, you authenticate at <a href="https://claude.ai" target="_blank" rel="noopener">claude.ai</a>, done. Your credentials are saved after that.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <h3>Start talking to it</h3>
+          <p>You're now in the Claude Code session. Type what you want in plain English. It'll ask for your permission before modifying any file — you approve or reject each change.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="tip" style="margin-top: 16px;">
+      <div class="tip-icon">ℹ️</div>
+      <p><strong>Windows users:</strong> Claude Code works best via WSL (Windows Subsystem for Linux). Microsoft's setup guide is here: <a href="https://learn.microsoft.com/en-us/windows/wsl/install" target="_blank" rel="noopener">learn.microsoft.com/windows/wsl/install</a>. If you already run a Linux VM or WSL for tinkering, just use that.</p>
+    </div>
+  </div>
+
+  <hr>
+
+  <div class="section">
+    <div class="section-label">Walkthrough</div>
+    <h2>Debugging a Python script that broke</h2>
+    <p style="font-size: 15px; color: var(--text-muted); margin-bottom: 1.25rem; line-height: 1.65;">This is probably what you'll reach for first. A script worked yesterday, today it throws an error, and you don't want to spend an hour reading Stack Overflow. Here's the exact flow.</p>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h3>Open a terminal in the script's folder</h3>
+          <p>Run <code>cd ~/path/to/your/script</code> first. Claude Code only sees files in the folder where you launch it (and subfolders), so make sure you're in the right place before starting.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h3>Start a session</h3>
+          <p>Type <code>claude</code> and hit enter. You're now in an interactive session — anything you type goes to Claude.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h3>Paste the full error, not just a summary</h3>
+          <p>Run the script, copy the <strong>entire traceback</strong> — every line, including file paths and line numbers — and paste it in. Don't paraphrase. The traceback tells Claude exactly which file and which line to look at first.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <h3>Mention what changed recently</h3>
+          <p>"It worked yesterday, then I upgraded Python to 3.12" or "I added a new sensor and now it crashes on startup" cuts diagnosis time massively. Claude can read your code but it can't read your history — tell it.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <h3>Let it investigate before fixing</h3>
+          <p>It'll read the script, peek at related files, and explain what's going wrong in plain English. Read that explanation. If something doesn't sound right, push back — "but the API returns a list, not a dict" — instead of letting it apply a fix you're unsure about.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">6</div>
+        <div class="step-body">
+          <h3>Approve the fix</h3>
+          <p>It shows you the exact change before touching the file. Approve it, reject it, or ask for a different approach. Nothing is modified without your okay.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">7</div>
+        <div class="step-body">
+          <h3>Re-run and confirm</h3>
+          <p>Either run the script yourself, or just say <code>run it and tell me if it works</code>. If something's still broken, describe the new symptom — you're in the same session, so it remembers everything from the previous steps.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="tip" style="margin-top: 18px;">
+      <div class="tip-icon">💡</div>
+      <p><strong>Ask "why" before "fix":</strong> Try <code>explain why this is happening before changing anything</code>. You'll learn something about your own code, and Claude's explanation often reveals whether the "obvious" fix is actually the right one.</p>
+    </div>
+    <div class="tip">
+      <div class="tip-icon">⚠️</div>
+      <p><strong>If two fix attempts don't work, reset.</strong> Type <code>/clear</code> and start over with a fresh description. Long debug sessions accumulate wrong assumptions, and a clean slate is faster than dragging a confused session forward.</p>
+    </div>
+
+    <div class="card" style="margin-top: 18px;">
+      <h3>What a real prompt looks like</h3>
+      <p>Don't overthink it — just be specific and paste the error. Something like:</p>
+      <div class="example">my weather_logger.py used to log temps to a CSV every 10 min. Today it dies on startup with this error: [paste full traceback]. Last thing I changed was the sensor library — went from Adafruit_DHT to adafruit-circuitpython-dht. Find the cause and fix it without touching the CSV writing logic.</div>
+    </div>
+  </div>
+
+  <hr>
+
+  <div class="section">
+    <div class="section-label">Pricing</div>
+    <h2>What does it cost?</h2>
+    <div class="pricing-row">
+      <div class="pricing-card">
+        <h3>Pro</h3>
+        <div class="price">$20<span>/month</span></div>
+        <p>Already paying for Claude.ai? Claude Code is included. Good starting point — try this first before upgrading.</p>
+      </div>
+      <div class="pricing-card recommended">
+        <h3>Max <span class="badge">Recommended</span></h3>
+        <div class="price">$100<span>/month</span></div>
+        <p>5× more usage than Pro. Once you get into a real project you'll hit Pro limits fast. Max is the sweet spot for regular use.</p>
+      </div>
+    </div>
+    <div class="tip" style="margin-top: 12px;">
+      <div class="tip-icon">💡</div>
+      <p>If you already have a Claude Pro subscription, you already have access right now — try it before paying anything extra.</p>
+    </div>
+  </div>
+
+  <hr>
+
+  <div class="section">
+    <div class="section-label">Real examples</div>
+    <h2>Things a hobbyist would actually use this for</h2>
+
+    <div class="card">
+      <h3>Home automation scripts</h3>
+      <p>Write or extend Home Assistant automations, Python scripts for sensors, or MQTT integrations without knowing every API by heart.</p>
+      <div class="example">add a morning routine automation that turns on lights at 7am and checks if anyone's home first</div>
+    </div>
+
+    <div class="card">
+      <h3>Self-hosted dashboards</h3>
+      <p>Build a web dashboard for your homelab metrics, Pi-hole stats, or anything you're monitoring — without needing to know HTML or JavaScript.</p>
+      <div class="example">create a webpage that shows my Proxmox VM statuses and refreshes every 30 seconds</div>
+    </div>
+
+    <div class="card">
+      <h3>Fixing broken scripts</h3>
+      <p>Something stopped working after an update? Describe the error and Claude Code will find the cause and fix it directly in the file.</p>
+      <div class="example">this script throws a KeyError on line 42 after I upgraded Python — fix it without breaking anything else</div>
+    </div>
+
+    <div class="card">
+      <h3>Understanding unfamiliar code</h3>
+      <p>Found a project on GitHub that does what you want but can't figure out how to adapt it? Claude Code can read the whole thing and explain it plainly.</p>
+      <div class="example">explain what this project does and what I'd need to change to run it on a Raspberry Pi 4</div>
+    </div>
+
+    <div class="card">
+      <h3>Building small tools from scratch</h3>
+      <p>A script that renames files by date, a Discord bot that alerts you when a server goes down, a cron job that backs up a folder — describe it, it builds it.</p>
+      <div class="example">write a Python script that monitors my NAS uptime and sends me a Telegram message if it goes offline</div>
+    </div>
+  </div>
+
+  <hr>
+
+  <div class="section">
+    <div class="section-label">Prompting tips</div>
+    <h2>How to talk to it effectively</h2>
+
+    <div class="tip">
+      <div class="tip-icon">✅</div>
+      <p><strong>Be specific about what you want, not how to do it.</strong> "Add input validation to the login form so it rejects empty fields" beats "fix the form".</p>
+    </div>
+    <div class="tip">
+      <div class="tip-icon">✅</div>
+      <p><strong>Tell it your constraints.</strong> "I want this in Python, not Node. It needs to run on a Raspberry Pi 4." Context helps it make better decisions.</p>
+    </div>
+    <div class="tip">
+      <div class="tip-icon">✅</div>
+      <p><strong>Let it explore first.</strong> On a new project, ask it "what does this project do?" before asking it to change anything. It'll read the files and build context.</p>
+    </div>
+    <div class="tip">
+      <div class="tip-icon">✅</div>
+      <p><strong>Type <code>/clear</code> between unrelated tasks.</strong> Claude Code keeps everything in memory during a session — irrelevant history degrades its focus. Fresh session = cleaner results.</p>
+    </div>
+    <div class="tip">
+      <div class="tip-icon">✅</div>
+      <p><strong>If it goes in the wrong direction, just say so.</strong> "That's not what I meant — I want X, not Y." It doesn't get offended and will course-correct.</p>
+    </div>
+
+    <div style="margin-top: 1.5rem;">
+      <div class="section-label">Quick prompt templates to steal</div>
+      <div class="prompt-grid">
+        <div class="prompt-card">
+          <div class="prompt-tag">Explore</div>
+          <p>what does this project do and how is it structured?</p>
+        </div>
+        <div class="prompt-card">
+          <div class="prompt-tag">Build</div>
+          <p>create a script that [goal]. Keep it simple, use Python, no external libraries if possible.</p>
+        </div>
+        <div class="prompt-card">
+          <div class="prompt-tag">Fix</div>
+          <p>this throws [error]. Find the cause and fix it without changing anything unrelated.</p>
+        </div>
+        <div class="prompt-card">
+          <div class="prompt-tag">Explain</div>
+          <p>explain what [function/file] does in plain language, no jargon.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr>
+
+  <div class="section">
+    <div class="section-label">One important thing</div>
+    <div class="analogy-box">
+      <p><strong>You're always in control.</strong> Claude Code always asks for your approval before modifying a file. You're never watching helplessly as it rewrites everything. Approve, reject, or ask it to try a different approach — your call every step of the way.</p>
+    </div>
+  </div>
+
+  <hr>
+
+  <div class="section">
+    <div class="section-label">Where to go next</div>
+    <h2>Useful links</h2>
+    <div class="card">
+      <h3>Official quickstart</h3>
+      <p>The official docs from Anthropic — goes deeper on all the features once you've got the basics down.</p>
+      <div class="example" style="font-family: inherit;">→ <a href="https://code.claude.com/docs/en/quickstart" target="_blank" rel="noopener">code.claude.com/docs/en/quickstart</a></div>
+    </div>
+    <div class="card">
+      <h3>Sign up / log in</h3>
+      <p>Create an Anthropic account or manage your subscription here.</p>
+      <div class="example" style="font-family: inherit;">→ <a href="https://claude.ai" target="_blank" rel="noopener">claude.ai</a></div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <p>Written for Edward — my badminton partner, who I keep cornering between matches to talk about this stuff. Hope this saves you a few frustrated Saturdays. See you on the court. — May 2026</p>
+  </div>
+
+</div>
+</body>
+</html>
