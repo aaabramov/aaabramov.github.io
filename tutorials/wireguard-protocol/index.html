@@ -1,0 +1,1193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>WireGuard, visually — how an encrypted tunnel forms</title>
+<style>
+  :root {
+    --bg: #0b0e14;
+    --bg-2: #141925;
+    --bg-3: #1c2232;
+    --fg: #e6edf3;
+    --fg-dim: #9aa4b2;
+    --fg-dimmer: #5f6a7d;
+    --accent: #7aa2f7;
+    --accent-2: #bb9af7;
+    --accent-3: #7dcfff;
+    --good: #9ece6a;
+    --warn: #e0af68;
+    --bad: #f7768e;
+    --border: #2a3142;
+    --radius: 12px;
+    --mono: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.6;
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .container { max-width: 980px; margin: 0 auto; padding: 0 24px; }
+
+  /* Hero */
+  header {
+    padding: 80px 0 60px;
+    background: radial-gradient(ellipse at top, rgba(122,162,247,0.12), transparent 60%);
+    border-bottom: 1px solid var(--border);
+  }
+  h1 {
+    font-size: clamp(32px, 5vw, 52px);
+    line-height: 1.15;
+    margin: 0 0 16px;
+    letter-spacing: -0.02em;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 50%, var(--accent-3) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 700;
+  }
+  .tagline {
+    font-size: clamp(17px, 2vw, 20px);
+    color: var(--fg-dim);
+    max-width: 640px;
+    margin: 0 0 28px;
+  }
+  .hero-meta {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: var(--fg-dimmer);
+    font-family: var(--mono);
+  }
+  .hero-meta span::before { content: "◆ "; color: var(--accent); }
+
+  /* Sections */
+  section {
+    padding: 64px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  section:last-of-type { border-bottom: none; }
+  section h2 {
+    font-size: clamp(24px, 3.5vw, 32px);
+    margin: 0 0 8px;
+    letter-spacing: -0.01em;
+  }
+  section .eyebrow {
+    font-family: var(--mono);
+    color: var(--accent);
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  section .lede {
+    color: var(--fg-dim);
+    max-width: 720px;
+    margin: 0 0 32px;
+    font-size: 17px;
+  }
+  p { margin: 0 0 16px; }
+  p code, li code {
+    font-family: var(--mono);
+    background: var(--bg-3);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.88em;
+    color: var(--accent-3);
+  }
+
+  .callout {
+    padding: 16px 20px;
+    background: var(--bg-2);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    margin: 20px 0;
+    color: var(--fg-dim);
+  }
+  .callout strong { color: var(--fg); }
+  .callout.warn { border-left-color: var(--warn); }
+
+  /* Card */
+  .card {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-top: 20px;
+  }
+
+  button {
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: transform 0.1s, background 0.15s;
+  }
+  button:hover:not(:disabled) { background: var(--accent-2); transform: translateY(-1px); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.ghost {
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid var(--border);
+  }
+  button.ghost:hover:not(:disabled) { background: var(--accent); color: var(--bg); }
+
+  input[type=text] {
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: var(--fg);
+    font-family: var(--mono);
+    font-size: 15px;
+  }
+  input[type=text]:focus { outline: none; border-color: var(--accent); }
+
+  .formula {
+    font-family: var(--mono);
+    background: var(--bg-3);
+    padding: 14px 18px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    margin: 14px 0;
+    font-size: 14px;
+    color: var(--accent-3);
+    overflow-x: auto;
+  }
+
+  /* ── Stepper controls (shared by §2 handshake and §4 packet) ── */
+  .stepper-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 18px;
+    flex-wrap: wrap;
+  }
+  .stepper-controls .counter {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--fg-dim);
+    margin-left: auto;
+  }
+  .stepper-controls .counter b { color: var(--accent); }
+
+  /* ── §1 peer identity cards ── */
+  .peer-grid {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 16px;
+  }
+  @media (max-width: 720px) { .peer-grid { grid-template-columns: 1fr; } }
+  .peer-card {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+  .peer-card .role { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); margin-bottom: 4px; }
+  .peer-card .name { font-size: 18px; font-weight: 600; margin-bottom: 12px; }
+  .peer-card .kv { font-family: var(--mono); font-size: 12.5px; line-height: 1.9; }
+  .peer-card .kv .k { color: var(--fg-dimmer); }
+  .peer-card .kv .pub { color: var(--good); word-break: break-all; }
+  .peer-card .kv .priv { color: var(--bad); }
+  .peer-card .kv .ep { color: var(--accent-3); }
+  .peer-link {
+    text-align: center;
+    color: var(--fg-dimmer);
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .peer-link .line { color: var(--accent-2); font-size: 22px; }
+
+  /* ── §2 handshake ── */
+  .hs-stage {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 22px;
+  }
+  .hs-peers {
+    display: grid;
+    grid-template-columns: 1fr 90px 1fr;
+    align-items: center;
+    gap: 12px;
+  }
+  @media (max-width: 600px) { .hs-peers { grid-template-columns: 1fr 60px 1fr; } }
+  .hs-peer {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    background: var(--bg-3);
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .hs-peer.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 0 22px rgba(122,162,247,0.18); }
+  .hs-peer .who { font-size: 14px; font-weight: 600; }
+  .hs-peer .sub { font-family: var(--mono); font-size: 11px; color: var(--fg-dimmer); margin-top: 2px; }
+  .hs-arrow { text-align: center; position: relative; height: 40px; }
+  .hs-arrow .track { font-size: 26px; color: var(--fg-dimmer); line-height: 40px; }
+  .hs-arrow.to-r .track, .hs-arrow.to-l .track { color: var(--accent); }
+  .hs-arrow .pulse {
+    position: absolute; top: 50%; left: 0; transform: translateY(-50%);
+    width: 10px; height: 10px; border-radius: 50%; background: var(--accent);
+    box-shadow: 0 0 12px var(--accent); opacity: 0;
+  }
+  .hs-arrow.to-r .pulse { animation: flyR 0.9s ease-in-out; }
+  .hs-arrow.to-l .pulse { animation: flyL 0.9s ease-in-out; }
+  @keyframes flyR { 0%{left:0;opacity:0} 15%{opacity:1} 85%{opacity:1} 100%{left:calc(100% - 10px);opacity:0} }
+  @keyframes flyL { 0%{left:calc(100% - 10px);opacity:0} 15%{opacity:1} 85%{opacity:1} 100%{left:0;opacity:0} }
+
+  .hs-msg {
+    margin-top: 18px;
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    background: var(--bg);
+  }
+  .hs-msg .msg-title { font-family: var(--mono); font-size: 12px; color: var(--accent-2); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; }
+  .hs-field { display: grid; grid-template-columns: 120px 1fr; gap: 10px; padding: 5px 0; font-family: var(--mono); font-size: 12.5px; align-items: baseline; }
+  .hs-field .fname { color: var(--accent-3); }
+  .hs-field .fval { color: var(--fg-dim); word-break: break-all; }
+  .hs-field .fval.enc { color: var(--warn); }
+  .hs-field .fval .lock { color: var(--warn); }
+  .hs-empty { color: var(--fg-dimmer); font-family: var(--mono); font-size: 12.5px; }
+
+  .hs-state {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 16px;
+  }
+  @media (max-width: 600px) { .hs-state { grid-template-columns: 1fr; } }
+  .hs-state .cell {
+    background: var(--bg-3);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .hs-state .cell .lbl { color: var(--fg-dimmer); display: block; margin-bottom: 3px; }
+  .hs-state .cell .val { color: var(--accent); word-break: break-all; }
+  .hs-state .cell.derived .val { color: var(--good); }
+
+  .hs-caption {
+    margin-top: 16px;
+    padding: 14px 16px;
+    background: var(--bg-3);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    min-height: 64px;
+  }
+  .hs-caption .ct { font-weight: 600; margin-bottom: 4px; }
+  .hs-caption .cd { color: var(--fg-dim); font-size: 14.5px; }
+
+  .hs-transport {
+    margin-top: 16px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  @media (max-width: 600px) { .hs-transport { grid-template-columns: 1fr; } }
+  .hs-transport .tk {
+    border: 1px solid rgba(158,206,106,0.3);
+    background: rgba(158,206,106,0.06);
+    border-radius: 8px;
+    padding: 12px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+  }
+  .hs-transport .tk .h { color: var(--good); font-size: 12px; margin-bottom: 6px; }
+  .hs-transport .tk .row { color: var(--fg-dim); }
+  .hs-transport .tk .row .mono { color: var(--good); }
+
+  /* ── §3 cryptokey routing ── */
+  .route-table { width: 100%; border-collapse: collapse; margin-top: 4px; font-family: var(--mono); font-size: 13px; }
+  .route-table th { text-align: left; color: var(--fg-dimmer); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  .route-table td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .route-table tr:last-child td { border-bottom: none; }
+  .route-table .peer-name { color: var(--accent); }
+  .route-table .cidr { color: var(--fg-dim); }
+  .route-table .cidr.hit { color: var(--good); font-weight: 700; }
+  .route-table tr.matched { background: rgba(158,206,106,0.07); }
+  .route-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 18px 0 14px; }
+  .route-controls input { flex: 1; min-width: 160px; }
+  .route-presets { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .route-presets button { font-size: 12px; padding: 6px 12px; }
+  .route-toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--fg-dim); margin-bottom: 18px; cursor: pointer; user-select: none; }
+  .route-toggle input { width: 16px; height: 16px; accent-color: var(--accent); }
+  .route-verdict {
+    padding: 16px 18px;
+    border-radius: 10px;
+    font-size: 15px;
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    min-height: 58px;
+  }
+  .route-verdict.ok { border-color: rgba(158,206,106,0.4); background: rgba(158,206,106,0.07); }
+  .route-verdict.drop { border-color: rgba(247,118,142,0.4); background: rgba(247,118,142,0.07); }
+  .route-verdict .big { font-family: var(--mono); font-weight: 700; }
+  .route-verdict.ok .big { color: var(--good); }
+  .route-verdict.drop .big { color: var(--bad); }
+  .route-verdict .detail { color: var(--fg-dim); font-size: 13.5px; margin-top: 6px; }
+
+  /* ── §4 packet journey ── */
+  .pkt-stage { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; }
+  .pkt-wire {
+    display: grid;
+    grid-template-columns: 70px 1fr 70px;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+  .pkt-node { text-align: center; font-size: 12px; color: var(--fg-dim); }
+  .pkt-node .ico { font-size: 26px; }
+  .pkt-node .nm { font-family: var(--mono); font-size: 10.5px; color: var(--fg-dimmer); margin-top: 2px; }
+  .pkt-node.active { color: var(--accent); }
+  .pkt-line { position: relative; height: 4px; background: var(--bg-3); border-radius: 2px; }
+  .pkt-line .dot {
+    position: absolute; top: 50%; transform: translate(-50%,-50%);
+    width: 14px; height: 14px; border-radius: 3px; background: var(--accent);
+    box-shadow: 0 0 12px var(--accent);
+    left: 0; transition: left 0.5s ease, background 0.3s;
+  }
+  .pkt-line .dot.enc { background: var(--warn); box-shadow: 0 0 12px var(--warn); }
+
+  .pkt-box { border-radius: 10px; padding: 12px 14px; margin-top: 10px; font-family: var(--mono); font-size: 12.5px; transition: opacity 0.3s; }
+  .pkt-layer-udp { background: rgba(122,162,247,0.07); border: 1px solid rgba(122,162,247,0.3); }
+  .pkt-layer-transport { background: rgba(224,175,104,0.07); border: 1px solid rgba(224,175,104,0.3); }
+  .pkt-layer-inner { background: rgba(158,206,106,0.07); border: 1px solid rgba(158,206,106,0.35); }
+  .pkt-box .layer-h { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+  .pkt-layer-udp .layer-h { color: var(--accent); }
+  .pkt-layer-transport .layer-h { color: var(--warn); }
+  .pkt-layer-inner .layer-h { color: var(--good); }
+  .pkt-box .frow { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; color: var(--fg-dim); }
+  .pkt-box .frow .fk { color: var(--fg-dimmer); }
+  .pkt-cipher { color: var(--warn); word-break: break-all; }
+  .pkt-dim { opacity: 0.35; }
+  .pkt-caption {
+    margin-top: 16px; padding: 14px 16px; background: var(--bg-3);
+    border-left: 3px solid var(--accent); border-radius: 4px; min-height: 60px;
+  }
+  .pkt-caption .ct { font-weight: 600; margin-bottom: 4px; }
+  .pkt-caption .cd { color: var(--fg-dim); font-size: 14.5px; }
+
+  /* ── §5 extras ── */
+  .extra-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 20px; }
+  .extra-card { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+  .extra-card h4 { margin: 0 0 8px; font-size: 15px; color: var(--accent); }
+  .extra-card p { margin: 0; font-size: 14px; color: var(--fg-dim); }
+
+  /* ── footer ── */
+  footer { padding: 40px 0 60px; color: var(--fg-dimmer); font-size: 13px; }
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+
+  /* ── knowledge-base back link ── */
+  .kb-back { border-bottom: 1px solid var(--border); padding: 14px 24px; font-family: var(--mono); font-size: 13px; }
+  .kb-back a { color: var(--fg-dimmer); text-decoration: none; transition: color 0.15s; }
+  .kb-back a:hover { color: var(--accent); }
+  .kb-back .arr { color: var(--accent); margin-right: 6px; }
+
+  /* ── respect reduced motion ── */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="kb-back"><a href="/"><span class="arr">←</span>aaabramov / knowledge base</a></nav>
+
+<!-- ═══ HERO ═══ -->
+<header>
+  <div class="container">
+    <h1>WireGuard,<br/>visually.</h1>
+    <p class="tagline">
+      How a modern VPN builds an encrypted tunnel — the handshake, the routing,
+      and a single packet's journey — stepped through one move at a time.
+    </p>
+    <div class="hero-meta">
+      <span>runs entirely in your browser</span>
+      <span>illustrative crypto, faithful mechanics</span>
+      <span>no server, no install</span>
+    </div>
+  </div>
+</header>
+
+<!-- ═══ 1. MENTAL MODEL ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">01 · The mental model</div>
+    <h2>A peer <em>is</em> its public key.</h2>
+    <p class="lede">
+      WireGuard is famously small (~4,000 lines in the kernel) because it throws out
+      negotiation. There are no cipher suites to agree on, no certificates, no
+      connection states to manage. Each side is configured with one thing about the other:
+      its <strong>static public key</strong>. Knowing a peer means knowing its public key
+      — plus, optionally, where to reach it (an <code>endpoint</code>).
+    </p>
+
+    <div class="card">
+      <div class="peer-grid">
+        <div class="peer-card" id="peerA">
+          <div class="role">Initiator</div>
+          <div class="name">💻 your&nbsp;laptop</div>
+          <div class="kv">
+            <div><span class="k">public&nbsp;&nbsp;</span> <span class="pub" data-pub>—</span></div>
+            <div><span class="k">private&nbsp;</span> <span class="priv">never leaves the device</span></div>
+            <div><span class="k">tunnel&nbsp;&nbsp;</span> <span class="ep">10.0.0.2/32</span></div>
+          </div>
+        </div>
+        <div class="peer-link">
+          <div class="line">⇄</div>
+          knows each<br/>other's<br/>public key
+        </div>
+        <div class="peer-card" id="peerB">
+          <div class="role">Responder</div>
+          <div class="name">🖥️ VPN&nbsp;server</div>
+          <div class="kv">
+            <div><span class="k">public&nbsp;&nbsp;</span> <span class="pub" data-pub>—</span></div>
+            <div><span class="k">private&nbsp;</span> <span class="priv">never leaves the server</span></div>
+            <div><span class="k">endpoint</span> <span class="ep">198.51.100.7:51820</span></div>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:18px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <button class="ghost" id="regen-keys">↻ Generate new identities</button>
+        <span style="color:var(--fg-dimmer);font-size:13px;font-family:var(--mono)">
+          a keypair is the entire identity — rotate it and you are a different peer
+        </span>
+      </div>
+    </div>
+
+    <div class="callout">
+      <strong>That's the whole trust model.</strong> No CA, no PKI. If a packet decrypts
+      cleanly with the key tied to a peer, it <em>is</em> that peer. Everything below builds
+      on this: the handshake proves both sides hold the matching private keys, and routing
+      decides which key a packet belongs to.
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 2. THE HANDSHAKE ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">02 · The handshake</div>
+    <h2>One round-trip, and the tunnel is live.</h2>
+    <p class="lede">
+      WireGuard uses the <strong>Noise&nbsp;IK</strong> handshake pattern. In exactly two
+      messages, both peers authenticate each other and independently derive the <em>same</em>
+      pair of session keys. The trick: every key exchange and every field gets folded into a
+      running <strong>chaining key</strong> <code>C</code> and transcript hash <code>H</code> —
+      so if anything differs, the final keys won't match. Step through it below.
+    </p>
+
+    <div class="formula">Noise_IKpsk2 · Curve25519 (DH) · ChaCha20-Poly1305 (AEAD) · BLAKE2s (hash)</div>
+
+    <div class="hs-stage">
+      <div class="hs-peers">
+        <div class="hs-peer" id="hs-init">
+          <div class="who">💻 Initiator</div>
+          <div class="sub">your laptop</div>
+        </div>
+        <div class="hs-arrow" id="hs-arrow">
+          <div class="track">↔</div>
+          <div class="pulse"></div>
+        </div>
+        <div class="hs-peer" id="hs-resp">
+          <div class="who">🖥️ Responder</div>
+          <div class="sub">VPN server</div>
+        </div>
+      </div>
+
+      <div class="hs-msg" id="hs-msg">
+        <div class="msg-title" id="hs-msg-title">— no message yet —</div>
+        <div id="hs-msg-body"><div class="hs-empty">Press <b>Next</b> to begin.</div></div>
+      </div>
+
+      <div class="hs-state">
+        <div class="cell"><span class="lbl">chaining key&nbsp; C</span><span class="val" id="hs-c">—</span></div>
+        <div class="cell"><span class="lbl">transcript hash&nbsp; H</span><span class="val" id="hs-h">—</span></div>
+      </div>
+      <div class="hs-state" id="hs-derived-wrap" style="display:none">
+        <div class="cell derived"><span class="lbl" id="hs-derived-lbl">derived key</span><span class="val" id="hs-derived">—</span></div>
+      </div>
+
+      <div class="hs-transport" id="hs-transport" style="display:none">
+        <div class="tk">
+          <div class="h">💻 laptop — session keys</div>
+          <div class="row">send → <span class="mono" id="tk-i-send">—</span></div>
+          <div class="row">recv ← <span class="mono" id="tk-i-recv">—</span></div>
+        </div>
+        <div class="tk">
+          <div class="h">🖥️ server — session keys</div>
+          <div class="row">send → <span class="mono" id="tk-r-send">—</span></div>
+          <div class="row">recv ← <span class="mono" id="tk-r-recv">—</span></div>
+        </div>
+      </div>
+
+      <div class="hs-caption">
+        <div class="ct" id="hs-ct">Ready</div>
+        <div class="cd" id="hs-cd">Both peers already hold each other's static public key. Step through the two-message handshake to see how they reach a shared secret.</div>
+      </div>
+
+      <div class="stepper-controls">
+        <button class="ghost" id="hs-prev" disabled>← Prev</button>
+        <button id="hs-next">Next →</button>
+        <button class="ghost" id="hs-reset">Reset</button>
+        <span class="counter">step <b id="hs-step">0</b> / <span id="hs-total">11</span></span>
+      </div>
+    </div>
+
+    <div class="callout">
+      <strong>Why this is clever.</strong> Four Diffie–Hellman operations combine every
+      pairing of long-term and ephemeral keys. The ephemeral keys give <em>forward secrecy</em>
+      (recording today's traffic is useless once they're discarded); the static keys give
+      <em>authentication</em>. All four results feed one chaining key, so both sides converge on
+      identical transport keys without ever transmitting a secret.
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 3. CRYPTOKEY ROUTING ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">03 · Cryptokey routing</div>
+    <h2>The routing table is keyed by public key.</h2>
+    <p class="lede">
+      Here is WireGuard's second big idea. Each peer carries an <code>AllowedIPs</code> list:
+      the set of destination IP ranges that belong to it. To send a packet, WireGuard looks up
+      the destination in this table by <strong>longest-prefix match</strong> — the winning entry
+      names the peer, and therefore the key, to encrypt with. No match means <em>no route</em>:
+      the packet is dropped. Inbound, the same table is a filter: a decrypted packet is only
+      accepted if its source falls in that peer's <code>AllowedIPs</code>.
+    </p>
+
+    <div class="card">
+      <p style="margin-top:0;color:var(--fg-dim);font-size:14px">
+        Your laptop's peer table. Type any destination IP (or pick one) to see where the packet goes.
+      </p>
+      <table class="route-table" id="route-table">
+        <thead>
+          <tr><th>peer</th><th>endpoint</th><th>AllowedIPs</th></tr>
+        </thead>
+        <tbody id="route-body"></tbody>
+      </table>
+
+      <label class="route-toggle" style="margin-top:16px">
+        <input type="checkbox" id="route-fulltunnel" />
+        full-tunnel mode — add <code>0.0.0.0/0</code> to the VPN server (route <em>everything</em> through it)
+      </label>
+
+      <div class="route-controls">
+        <input type="text" id="route-input" value="10.0.0.5" placeholder="e.g. 10.0.0.5" />
+        <button id="route-go">Route packet</button>
+      </div>
+      <div class="route-presets">
+        <button class="ghost" data-ip="10.0.0.5">10.0.0.5</button>
+        <button class="ghost" data-ip="192.168.50.10">192.168.50.10</button>
+        <button class="ghost" data-ip="100.64.3.9">100.64.3.9</button>
+        <button class="ghost" data-ip="8.8.8.8">8.8.8.8</button>
+      </div>
+
+      <div class="route-verdict" id="route-verdict">
+        <span style="color:var(--fg-dimmer)">Enter a destination IP and route a packet.</span>
+      </div>
+    </div>
+
+    <div class="callout">
+      <strong>One table, two jobs.</strong> The same <code>AllowedIPs</code> set is both the
+      outbound routing table (which key encrypts this packet?) and the inbound access-control
+      list (is this peer even allowed to claim this source IP?). That symmetry is why WireGuard
+      needs no separate firewall rules to enforce which peer owns which addresses.
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 4. A PACKET'S JOURNEY ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">04 · A packet's journey</div>
+    <h2>Wrap, send, unwrap.</h2>
+    <p class="lede">
+      Now put it together. A normal IP packet leaves an app on your laptop bound for
+      <code>10.0.0.5</code> inside the tunnel. Watch it get routed to a peer, encrypted with that
+      session key, wrapped in an ordinary UDP datagram, sent across the public internet, and
+      reassembled on the far side. Press play.
+    </p>
+
+    <div class="pkt-stage">
+      <div class="pkt-wire">
+        <div class="pkt-node" id="pkt-laptop"><div class="ico">💻</div><div class="nm">10.0.0.2</div></div>
+        <div class="pkt-line"><div class="dot" id="pkt-dot"></div></div>
+        <div class="pkt-node" id="pkt-server"><div class="ico">🖥️</div><div class="nm">198.51.100.7</div></div>
+      </div>
+
+      <!-- encapsulation layers -->
+      <div class="pkt-box pkt-layer-udp" id="layer-udp">
+        <div class="layer-h">outer UDP / IP datagram</div>
+        <div class="frow"><span class="fk">src</span><span id="udp-src">198.51.100.99:34512</span></div>
+        <div class="frow"><span class="fk">dst</span><span id="udp-dst">198.51.100.7:51820</span></div>
+      </div>
+      <div class="pkt-box pkt-layer-transport" id="layer-transport">
+        <div class="layer-h">WireGuard transport message</div>
+        <div class="frow"><span class="fk">type</span><span>4 · data</span></div>
+        <div class="frow"><span class="fk">receiver index</span><span id="tr-idx">0x3f1a­c2d8</span></div>
+        <div class="frow"><span class="fk">counter (nonce)</span><span id="tr-ctr">7</span></div>
+        <div class="frow"><span class="fk">payload</span><span class="pkt-cipher" id="tr-payload">—</span></div>
+      </div>
+      <div class="pkt-box pkt-layer-inner" id="layer-inner">
+        <div class="layer-h">inner IP packet (your real traffic)</div>
+        <div class="frow"><span class="fk">src</span><span>10.0.0.2</span></div>
+        <div class="frow"><span class="fk">dst</span><span>10.0.0.5</span></div>
+        <div class="frow"><span class="fk">data</span><span id="inner-data">GET /status</span></div>
+      </div>
+
+      <div class="pkt-caption">
+        <div class="ct" id="pkt-ct">Ready</div>
+        <div class="cd" id="pkt-cd">A plaintext IP packet is sitting on your laptop, waiting to be sent into the tunnel.</div>
+      </div>
+
+      <div class="stepper-controls">
+        <button class="ghost" id="pkt-prev" disabled>← Prev</button>
+        <button id="pkt-next">Next →</button>
+        <button class="ghost" id="pkt-play">▶ Play</button>
+        <button class="ghost" id="pkt-reset">Reset</button>
+        <span class="counter">step <b id="pkt-step">0</b> / <span id="pkt-total">8</span></span>
+      </div>
+    </div>
+
+    <div class="callout">
+      <strong>It's just UDP.</strong> To any router in between, this is an unremarkable UDP
+      datagram — no special protocol number, no handshake to fingerprint mid-stream. The
+      <code>receiver index</code> tells the far side which session to use without an expensive
+      key lookup, and the ever-increasing <code>counter</code> is the AEAD nonce <em>and</em> the
+      replay-protection sequence number in one.
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 5. EXTRAS ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">05 · Worth knowing</div>
+    <h2>A few things that fall out for free.</h2>
+    <p class="lede">
+      Because identity is a key and routing is a lookup, several properties that are bolted-on
+      complexity in other VPNs come naturally here.
+    </p>
+
+    <div class="extra-grid">
+      <div class="extra-card">
+        <h4>Roaming</h4>
+        <p>A peer is its key, not its IP. If your laptop jumps from Wi-Fi to cellular, the next
+        valid packet simply updates the stored endpoint. The tunnel never drops.</p>
+      </div>
+      <div class="extra-card">
+        <h4>Silence by default</h4>
+        <p>An unauthenticated packet gets no reply at all. To a port scanner, a WireGuard
+        endpoint is indistinguishable from a closed port — there's nothing to talk to.</p>
+      </div>
+      <div class="extra-card">
+        <h4>Persistent keepalive</h4>
+        <p>An optional tiny packet every N seconds keeps NAT mappings on stateful firewalls
+        alive, so a peer behind NAT stays reachable without re-handshaking.</p>
+      </div>
+      <div class="extra-card">
+        <h4>1-RTT, stateless-ish</h4>
+        <p>The tunnel is usable after a single round-trip, and under load a cookie reply
+        (MAC2) lets the responder stay stateless until a client proves it can receive.</p>
+      </div>
+    </div>
+
+    <div class="callout">
+      <strong>The one-breath summary.</strong> Configure peers by public key, prove possession
+      of the matching private keys in a two-message Noise handshake, derive symmetric session
+      keys, then route every packet to a peer by longest-prefix match and ship the ciphertext
+      inside plain UDP. That's WireGuard.
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    Illustrative walkthrough — key and byte values shown are fabricated for clarity, but the
+    message order, the four Diffie–Hellman operations, and cryptokey routing follow the real
+    protocol. For the authoritative source see the
+    <a href="https://www.wireguard.com/papers/wireguard.pdf" target="_blank" rel="noopener">WireGuard whitepaper</a>
+    by Jason A. Donenfeld.
+  </div>
+</footer>
+
+<!-- ═══════════════════════════════════════════════════════════
+     SCRIPT
+     ═══════════════════════════════════════════════════════════ -->
+<script>
+"use strict";
+
+// ────────────────────────────────────────────────────────────
+// shared helpers (no shared mutable state between demos)
+// ────────────────────────────────────────────────────────────
+
+// deterministic pseudo-random hex so "keys" look real and stable per seed
+function fakeHex(seed, bytes) {
+  bytes = bytes || 32;
+  let s = (seed >>> 0) || 1;
+  let out = "";
+  for (let i = 0; i < bytes; i++) {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    out += ((s >>> 24) & 0xff).toString(16).padStart(2, "0");
+  }
+  return out;
+}
+// shorten a long hex string for display: aabbccdd…1122
+function shortHex(hex) {
+  if (!hex) return "—";
+  return hex.slice(0, 8) + "…" + hex.slice(-4);
+}
+// base64-ish key for peer cards (looks like a real WireGuard key)
+function fakeKey(seed) {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  let s = (seed >>> 0) || 1;
+  let out = "";
+  for (let i = 0; i < 42; i++) {
+    s = (Math.imul(s, 1103515245) + 12345) >>> 0;
+    out += chars[(s >>> 16) % 64];
+  }
+  return out + "=";
+}
+
+// reusable stepper: drives an index 0..steps-1 and calls render(i)
+function makeStepper(opts) {
+  const total = opts.total;
+  let i = 0;
+  function clamp(n) { return Math.max(0, Math.min(total - 1, n)); }
+  function go(n) { i = clamp(n); opts.render(i); sync(); }
+  function sync() {
+    if (opts.prevBtn) opts.prevBtn.disabled = (i === 0);
+    if (opts.nextBtn) opts.nextBtn.disabled = (i === total - 1);
+    if (opts.stepEl) opts.stepEl.textContent = i;
+  }
+  if (opts.prevBtn) opts.prevBtn.addEventListener("click", () => go(i - 1));
+  if (opts.nextBtn) opts.nextBtn.addEventListener("click", () => go(i + 1));
+  if (opts.resetBtn) opts.resetBtn.addEventListener("click", () => go(0));
+  go(0);
+  return { go: go, get: () => i, next: () => go(i + 1), isLast: () => i === total - 1 };
+}
+
+
+// ════════════════════════════════════════════════════════════
+// §1 — PEER IDENTITY CARDS
+// ════════════════════════════════════════════════════════════
+(function peerIdentities() {
+  const cards = [document.getElementById("peerA"), document.getElementById("peerB")];
+  let seed = 7;
+  function paint() {
+    cards.forEach((card, idx) => {
+      card.querySelector("[data-pub]").textContent = fakeKey(seed + idx * 977);
+    });
+  }
+  document.getElementById("regen-keys").addEventListener("click", () => {
+    seed = (seed * 31 + 17) % 100000;
+    paint();
+  });
+  paint();
+})();
+
+
+// ════════════════════════════════════════════════════════════
+// §2 — THE HANDSHAKE (Noise IK), stepped
+// ════════════════════════════════════════════════════════════
+(function handshake() {
+  // fixed illustrative values
+  const Ei = fakeHex(11), Er = fakeHex(22);          // ephemeral pubkeys
+  const Si = fakeKey(31), Sr = fakeKey(32);          // static pubkeys (b64-ish)
+  const tStamp = "0x40000000.5c8f3a91";              // TAI64N-ish
+  const k1 = fakeHex(41), k2 = fakeHex(42);          // AEAD keys
+  const tA = fakeHex(900), tB = fakeHex(901);        // matching transport keys
+  // C / H evolve per step
+  const C = (n) => fakeHex(100 + n);
+  const H = (n) => fakeHex(200 + n);
+
+  // message field accumulators (rendered as the message is built)
+  const M1 = (fields) => ({ title: "Message 1 · Initiation  (laptop → server)", fields });
+  const M2 = (fields) => ({ title: "Message 2 · Response  (server → laptop)", fields });
+
+  const enc = (v) => ({ val: v, enc: true });
+
+  const STEPS = [
+    { // 0
+      who: "both", dir: null, c: C(0), h: H(0),
+      ct: "Setup — keys known in advance",
+      cd: "Each peer already holds the other's <b>static public key</b> (shared out-of-band, like SSH keys). The chaining key <code>C</code> and transcript hash <code>H</code> start from fixed protocol constants — identical on both sides.",
+    },
+    { // 1
+      who: "init", dir: null, c: C(1), h: H(1),
+      msg: M1([{ n: "ephemeral", v: Ei, note: "sent in the clear" }]),
+      ct: "Initiator makes an ephemeral key",
+      cd: "Your laptop generates a fresh <b>ephemeral keypair</b> for this handshake only, and mixes its public half into <code>C</code>. Discarding it afterward is what gives <em>forward secrecy</em>.",
+    },
+    { // 2
+      who: "init", dir: null, c: C(2), h: H(1), derived: { lbl: "AEAD key k₁", v: k1 },
+      msg: M1([{ n: "ephemeral", v: Ei }]),
+      ct: "DH #1 — ephemeral × responder-static",
+      cd: "Compute <code>DH(Eᵢ, Sᵣ)</code>: the laptop's ephemeral private key against the server's known static public key. The shared secret folds into <code>C</code> and yields the first AEAD key <code>k₁</code>.",
+    },
+    { // 3
+      who: "init", dir: null, c: C(2), h: H(3),
+      msg: M1([{ n: "ephemeral", v: Ei }, { n: "static", v: enc(Si) }]),
+      ct: "Encrypt the initiator's identity",
+      cd: "The laptop encrypts its <em>own</em> static public key with <code>k₁</code> → <code>msg.static</code>. Eavesdroppers can't tell who is connecting — that's the privacy half of Noise <b>IK</b>.",
+    },
+    { // 4
+      who: "init", dir: null, c: C(4), h: H(3), derived: { lbl: "AEAD key k₂", v: k2 },
+      msg: M1([{ n: "ephemeral", v: Ei }, { n: "static", v: enc(Si) }]),
+      ct: "DH #2 — static × static",
+      cd: "Compute <code>DH(Sᵢ, Sᵣ)</code>: both long-term identities combined. Folds into <code>C</code>, producing key <code>k₂</code>. This binds the handshake to both peers' permanent keys.",
+    },
+    { // 5
+      who: "init", dir: "r", c: C(4), h: H(5),
+      msg: M1([{ n: "ephemeral", v: Ei }, { n: "static", v: enc(Si) }, { n: "timestamp", v: enc(tStamp) }]),
+      ct: "Encrypt timestamp & send Message 1",
+      cd: "A timestamp is encrypted with <code>k₂</code> → <code>msg.timestamp</code>, blocking replay of old handshakes. The laptop sends <b>Message 1</b> to the server.",
+    },
+    { // 6
+      who: "resp", dir: null, c: C(4), h: H(5),
+      ct: "Responder replays the same math",
+      cd: "The server runs the identical steps on what it received — mixing in <code>Eᵢ</code>, doing the same two DHs with its own private keys. It arrives at the <em>same</em> <code>C</code> and <code>H</code>, and decrypts the laptop's static key + timestamp, <b>authenticating</b> it.",
+    },
+    { // 7
+      who: "resp", dir: null, c: C(7), h: H(7),
+      msg: M2([{ n: "ephemeral", v: Er, note: "sent in the clear" }]),
+      ct: "Responder makes its ephemeral key",
+      cd: "Now the server generates <em>its</em> ephemeral keypair <code>Eᵣ</code>, mixes the public half into <code>C</code>, and puts it in the response as <code>msg.ephemeral</code>.",
+    },
+    { // 8
+      who: "resp", dir: null, c: C(8), h: H(7),
+      msg: M2([{ n: "ephemeral", v: Er }]),
+      ct: "DH #3 — ephemeral × ephemeral",
+      cd: "Compute <code>DH(Eᵣ, Eᵢ)</code>: the two one-time keys together. This is the secret nobody can recover later, even if both static keys leak — the heart of forward secrecy.",
+    },
+    { // 9
+      who: "resp", dir: null, c: C(9), h: H(7),
+      msg: M2([{ n: "ephemeral", v: Er }]),
+      ct: "DH #4 — responder-ephemeral × initiator-static",
+      cd: "Compute <code>DH(Eᵣ, Sᵢ)</code> and fold it in. All <b>four</b> Diffie–Hellman results are now baked into the single chaining key <code>C</code>.",
+    },
+    { // 10
+      who: "resp", dir: "l", c: C(10), h: H(10),
+      msg: M2([{ n: "ephemeral", v: Er }, { n: "psk", v: enc("optional pre-shared key") }, { n: "empty", v: enc("∅ (auth tag only)") }]),
+      ct: "Mix PSK, send Message 2",
+      cd: "An optional pre-shared key is folded in (post-quantum hardening). The server encrypts an empty, authenticated payload → <code>msg.empty</code>, proving it derived the same keys, and sends <b>Message 2</b> back.",
+    },
+    { // 11
+      who: "both", dir: null, c: C(11), h: H(11), transport: true,
+      ct: "Tunnel up — split into transport keys",
+      cd: "Both peers split the final chaining key into a pair of <b>transport keys</b>: the laptop's send key is the server's receive key, and vice-versa. They match. One round-trip, and data can flow.",
+    },
+  ];
+
+  const el = {
+    init: document.getElementById("hs-init"),
+    resp: document.getElementById("hs-resp"),
+    arrow: document.getElementById("hs-arrow"),
+    msgTitle: document.getElementById("hs-msg-title"),
+    msgBody: document.getElementById("hs-msg-body"),
+    c: document.getElementById("hs-c"),
+    h: document.getElementById("hs-h"),
+    derivedWrap: document.getElementById("hs-derived-wrap"),
+    derivedLbl: document.getElementById("hs-derived-lbl"),
+    derived: document.getElementById("hs-derived"),
+    transport: document.getElementById("hs-transport"),
+    ct: document.getElementById("hs-ct"),
+    cd: document.getElementById("hs-cd"),
+  };
+  document.getElementById("hs-total").textContent = STEPS.length - 1;
+
+  let prevDir = null;
+  function render(i) {
+    const s = STEPS[i];
+
+    el.init.classList.toggle("active", s.who === "init" || s.who === "both");
+    el.resp.classList.toggle("active", s.who === "resp" || s.who === "both");
+
+    // arrow + one-shot fly animation (re-trigger by reflow)
+    el.arrow.classList.remove("to-r", "to-l");
+    el.arrow.querySelector(".track").textContent = s.dir === "r" ? "→" : s.dir === "l" ? "←" : "↔";
+    if (s.dir) {
+      void el.arrow.offsetWidth; // reflow so the keyframe restarts
+      el.arrow.classList.add(s.dir === "r" ? "to-r" : "to-l");
+    }
+    prevDir = s.dir;
+
+    // message card
+    if (s.msg) {
+      el.msgTitle.textContent = s.msg.title;
+      el.msgBody.innerHTML = s.msg.fields.map((f) => {
+        const isEnc = f.v && typeof f.v === "object" && f.v.enc;
+        const raw = isEnc ? f.v.val : f.v;
+        const valClass = isEnc ? "fval enc" : "fval";
+        const lock = isEnc ? '<span class="lock">🔒 </span>' : "";
+        const note = f.note ? ` <span style="color:var(--fg-dimmer)">· ${f.note}</span>` : "";
+        return `<div class="hs-field"><span class="fname">${f.n}</span><span class="${valClass}">${lock}${raw}${note}</span></div>`;
+      }).join("");
+    } else {
+      el.msgTitle.textContent = "— processing —";
+      el.msgBody.innerHTML = '<div class="hs-empty">No new message on the wire this step.</div>';
+    }
+
+    el.c.textContent = shortHex(s.c);
+    el.h.textContent = shortHex(s.h);
+
+    if (s.derived) {
+      el.derivedWrap.style.display = "";
+      el.derivedLbl.textContent = s.derived.lbl;
+      el.derived.textContent = shortHex(s.derived.v);
+    } else {
+      el.derivedWrap.style.display = "none";
+    }
+
+    if (s.transport) {
+      el.transport.style.display = "";
+      document.getElementById("tk-i-send").textContent = shortHex(tA);
+      document.getElementById("tk-i-recv").textContent = shortHex(tB);
+      document.getElementById("tk-r-send").textContent = shortHex(tB);
+      document.getElementById("tk-r-recv").textContent = shortHex(tA);
+    } else {
+      el.transport.style.display = "none";
+    }
+
+    el.ct.textContent = s.ct;
+    el.cd.innerHTML = s.cd;
+  }
+
+  makeStepper({
+    total: STEPS.length,
+    render,
+    prevBtn: document.getElementById("hs-prev"),
+    nextBtn: document.getElementById("hs-next"),
+    resetBtn: document.getElementById("hs-reset"),
+    stepEl: document.getElementById("hs-step"),
+  });
+})();
+
+
+// ════════════════════════════════════════════════════════════
+// §3 — CRYPTOKEY ROUTING (real IPv4 longest-prefix match)
+// ════════════════════════════════════════════════════════════
+(function cryptokeyRouting() {
+  const PEERS = [
+    { name: "vpn-server", endpoint: "198.51.100.7:51820", key: fakeKey(32), allowed: ["10.0.0.0/24", "100.64.0.0/10"] },
+    { name: "home-nas", endpoint: "nas.example.net:51820", key: fakeKey(55), allowed: ["192.168.50.0/24"] },
+  ];
+
+  function ipToInt(ip) {
+    const parts = ip.split(".");
+    if (parts.length !== 4) return null;
+    let n = 0;
+    for (const p of parts) {
+      if (!/^\d{1,3}$/.test(p)) return null;
+      const o = +p;
+      if (o > 255) return null;
+      n = (n * 256) + o;
+    }
+    return n >>> 0;
+  }
+  function maskFor(bits) { return bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0; }
+  function inCidr(ipInt, cidr) {
+    const [net, bitsStr] = cidr.split("/");
+    const bits = +bitsStr;
+    const m = maskFor(bits);
+    const netInt = ipToInt(net);
+    if (netInt === null) return false;
+    return (ipInt & m) === (netInt & m);
+  }
+
+  function effectiveAllowed(peer, fullTunnel) {
+    if (fullTunnel && peer.name === "vpn-server") return peer.allowed.concat(["0.0.0.0/0"]);
+    return peer.allowed;
+  }
+
+  const tableBody = document.getElementById("route-body");
+  const verdict = document.getElementById("route-verdict");
+  const input = document.getElementById("route-input");
+  const fullToggle = document.getElementById("route-fulltunnel");
+
+  let lastMatch = null; // { peerIdx, cidr }
+
+  function renderTable() {
+    const full = fullToggle.checked;
+    tableBody.innerHTML = PEERS.map((p, pi) => {
+      const allowed = effectiveAllowed(p, full);
+      const cidrs = allowed.map((c) => {
+        const hit = lastMatch && lastMatch.peerIdx === pi && lastMatch.cidr === c;
+        return `<span class="cidr ${hit ? "hit" : ""}">${c}</span>`;
+      }).join("&nbsp; ");
+      const rowCls = lastMatch && lastMatch.peerIdx === pi ? "matched" : "";
+      return `<tr class="${rowCls}">
+        <td class="peer-name">${p.name}</td>
+        <td>${p.endpoint}</td>
+        <td>${cidrs}</td>
+      </tr>`;
+    }).join("");
+  }
+
+  function route() {
+    const ip = input.value.trim();
+    const ipInt = ipToInt(ip);
+    if (ipInt === null) {
+      lastMatch = null;
+      verdict.className = "route-verdict drop";
+      verdict.innerHTML = `<span class="big">invalid IPv4</span><div class="detail">“${ip || "—"}” isn't a dotted-quad address. Try something like <code>10.0.0.5</code>.</div>`;
+      renderTable();
+      return;
+    }
+    const full = fullToggle.checked;
+    // find the longest-prefix match across all peers
+    let best = null; // { peerIdx, cidr, bits }
+    PEERS.forEach((p, pi) => {
+      effectiveAllowed(p, full).forEach((c) => {
+        if (inCidr(ipInt, c)) {
+          const bits = +c.split("/")[1];
+          if (!best || bits > best.bits) best = { peerIdx: pi, cidr: c, bits };
+        }
+      });
+    });
+
+    if (best) {
+      lastMatch = best;
+      const peer = PEERS[best.peerIdx];
+      verdict.className = "route-verdict ok";
+      verdict.innerHTML = `<span class="big">→ encrypt for ${peer.name}</span>
+        <div class="detail"><code>${ip}</code> matched <code>${best.cidr}</code> (longest prefix, /${best.bits}).
+        The packet is sealed with <b>${peer.name}</b>'s session key and sent to <code>${peer.endpoint}</code>.</div>`;
+    } else {
+      lastMatch = null;
+      verdict.className = "route-verdict drop";
+      verdict.innerHTML = `<span class="big">✗ dropped — no route</span>
+        <div class="detail"><code>${ip}</code> isn't inside any peer's <code>AllowedIPs</code>, so no key owns it. WireGuard silently drops the packet.${full ? "" : " <em>(Try full-tunnel mode above.)</em>"}</div>`;
+    }
+    renderTable();
+  }
+
+  document.getElementById("route-go").addEventListener("click", route);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") route(); });
+  fullToggle.addEventListener("change", route);
+  document.querySelectorAll(".route-presets [data-ip]").forEach((b) => {
+    b.addEventListener("click", () => { input.value = b.dataset.ip; route(); });
+  });
+
+  renderTable();
+})();
+
+
+// ════════════════════════════════════════════════════════════
+// §4 — A PACKET'S JOURNEY, stepped + autoplay
+// ════════════════════════════════════════════════════════════
+(function packetJourney() {
+  const cipher = fakeHex(770, 16);
+
+  // visibility/opacity per layer, dot position (0..100) + colour, active node
+  // layers: inner always relevant; transport+udp appear once wrapped
+  const STEPS = [
+    { pos: 0, node: "laptop", show: { inner: 1, transport: 0, udp: 0 }, dotEnc: false, payload: "—",
+      ct: "Plaintext packet on the laptop",
+      cd: "An app emits a normal IP packet: <code>10.0.0.2 → 10.0.0.5</code>, headed into the tunnel's address range." },
+    { pos: 0, node: "laptop", show: { inner: 1, transport: 0, udp: 0 }, dotEnc: false, payload: "—",
+      ct: "Cryptokey-routing lookup",
+      cd: "Destination <code>10.0.0.5</code> falls in the VPN server's <code>10.0.0.0/24</code>. That selects the peer — and its session key." },
+    { pos: 0, node: "laptop", show: { inner: 0.4, transport: 1, udp: 0 }, dotEnc: true, payload: shortHex(cipher),
+      ct: "Encrypt with the session send-key",
+      cd: "The whole inner packet is sealed with ChaCha20-Poly1305 under the peer's transport key. Out comes opaque ciphertext + an auth tag." },
+    { pos: 0, node: "laptop", show: { inner: 0.4, transport: 1, udp: 0 }, dotEnc: true, payload: shortHex(cipher),
+      ct: "Frame as a transport message",
+      cd: "The ciphertext is wrapped with <code>type=4</code>, the <b>receiver index</b> (which session on the far side), and a <b>counter</b> that doubles as the nonce and anti-replay number." },
+    { pos: 0, node: "laptop", show: { inner: 0.25, transport: 1, udp: 1 }, dotEnc: true, payload: shortHex(cipher),
+      ct: "Wrap in plain UDP",
+      cd: "The transport message becomes the payload of an ordinary UDP datagram: <code>laptop:34512 → 198.51.100.7:51820</code>. Nothing on the wire looks special." },
+    { pos: 50, node: null, show: { inner: 0.25, transport: 1, udp: 1 }, dotEnc: true, payload: shortHex(cipher),
+      ct: "Across the public internet",
+      cd: "Routers forward it like any UDP packet. An observer sees encrypted bytes between two IPs — not what's inside, nor even that it's a VPN mid-stream." },
+    { pos: 100, node: "server", show: { inner: 0.25, transport: 1, udp: 1 }, dotEnc: true, payload: shortHex(cipher),
+      ct: "Server: look up session, check counter",
+      cd: "The server reads the <b>receiver index</b> to grab the right session instantly, then checks the <b>counter</b> against its replay window — a reused or old counter is rejected." },
+    { pos: 100, node: "server", show: { inner: 0.4, transport: 1, udp: 0 }, dotEnc: false, payload: shortHex(cipher),
+      ct: "Decrypt with the matching key",
+      cd: "ChaCha20-Poly1305 verifies the auth tag and decrypts. If the tag checks out, the packet is authentic — and the inner <code>10.0.0.2 → 10.0.0.5</code> packet reappears intact." },
+    { pos: 100, node: "server", show: { inner: 1, transport: 0, udp: 0 }, dotEnc: false, payload: "—",
+      ct: "Deliver on the far side",
+      cd: "One last <code>AllowedIPs</code> check confirms <code>10.0.0.2</code> really belongs to this peer, then the server forwards the plaintext packet onward to <code>10.0.0.5</code>. Journey complete." },
+  ];
+
+  const dot = document.getElementById("pkt-dot");
+  const layers = {
+    inner: document.getElementById("layer-inner"),
+    transport: document.getElementById("layer-transport"),
+    udp: document.getElementById("layer-udp"),
+  };
+  const nodes = { laptop: document.getElementById("pkt-laptop"), server: document.getElementById("pkt-server") };
+  const ct = document.getElementById("pkt-ct");
+  const cd = document.getElementById("pkt-cd");
+  const payloadEl = document.getElementById("tr-payload");
+  document.getElementById("pkt-total").textContent = STEPS.length - 1;
+
+  function render(i) {
+    const s = STEPS[i];
+    dot.style.left = s.pos + "%";
+    dot.classList.toggle("enc", s.dotEnc);
+    for (const k in layers) {
+      layers[k].style.opacity = s.show[k];
+      layers[k].classList.toggle("pkt-dim", s.show[k] < 1 && s.show[k] > 0);
+    }
+    nodes.laptop.classList.toggle("active", s.node === "laptop");
+    nodes.server.classList.toggle("active", s.node === "server");
+    payloadEl.textContent = s.payload;
+    ct.textContent = s.ct;
+    cd.innerHTML = s.cd;
+  }
+
+  const stepper = makeStepper({
+    total: STEPS.length,
+    render,
+    prevBtn: document.getElementById("pkt-prev"),
+    nextBtn: document.getElementById("pkt-next"),
+    resetBtn: document.getElementById("pkt-reset"),
+    stepEl: document.getElementById("pkt-step"),
+  });
+
+  // autoplay
+  const playBtn = document.getElementById("pkt-play");
+  let timer = null;
+  function stop() { if (timer) { clearInterval(timer); timer = null; playBtn.textContent = "▶ Play"; } }
+  playBtn.addEventListener("click", () => {
+    if (timer) { stop(); return; }
+    if (stepper.isLast()) stepper.go(0);
+    playBtn.textContent = "❚❚ Pause";
+    timer = setInterval(() => {
+      if (stepper.isLast()) { stop(); return; }
+      stepper.next();
+    }, 1600);
+  });
+  // any manual nav cancels autoplay
+  ["pkt-prev", "pkt-next", "pkt-reset"].forEach((id) =>
+    document.getElementById(id).addEventListener("click", stop));
+})();
+
+</script>
+</body>
+</html>
