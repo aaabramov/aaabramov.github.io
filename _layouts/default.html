@@ -2,12 +2,29 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b0e14">
 
   <title>{% if page.title %}{{ page.title }} — {{ site.title }}{% else %}{{ site.title }}{% endif %}</title>
   <meta name="description" content="{% if page.excerpt %}{{ page.excerpt | strip_html | strip_newlines | truncate: 160 }}{% else %}{{ site.description }}{% endif %}">
   <meta name="google-site-verification" content="--tA_OOxxHfNlq1nQwBgtxdxHAuyHzMoDStEUzz-KPI">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="{% if page.layout == 'post' %}article{% else %}website{% endif %}">
+  <meta property="og:title" content="{% if page.title %}{{ page.title }} — {{ site.title }}{% else %}{{ site.title }}{% endif %}">
+  <meta property="og:description" content="{% if page.excerpt %}{{ page.excerpt | strip_html | strip_newlines | truncate: 160 }}{% else %}{{ site.description }}{% endif %}">
+  <meta property="og:url" content="{{ page.url | replace:'index.html','' | prepend: site.baseurl | prepend: site.url }}">
+  <meta property="og:site_name" content="{{ site.title }}">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="{% if page.title %}{{ page.title }} — {{ site.title }}{% else %}{{ site.title }}{% endif %}">
+  <meta name="twitter:description" content="{% if page.excerpt %}{{ page.excerpt | strip_html | strip_newlines | truncate: 160 }}{% else %}{{ site.description }}{% endif %}">
+  {% if site.twitter_username %}<meta name="twitter:site" content="@{{ site.twitter_username }}">{% endif %}
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 
   <link rel="icon" href="/favicon.ico">
   <link rel="stylesheet" href="{{ '/css/main.css' | prepend: site.baseurl }}">
@@ -22,8 +39,8 @@
     <a href="/" class="kb-name">aaabramov</a>
     <nav>
       <a href="/about/">about</a>
-      {% if site.github_username %}<a href="https://github.com/{{ site.github_username }}">github</a>{% endif %}
-      {% if site.twitter_username %}<a href="https://twitter.com/{{ site.twitter_username }}">twitter</a>{% endif %}
+      {% if site.github_username %}<a href="https://github.com/{{ site.github_username }}" target="_blank" rel="noopener noreferrer">github</a>{% endif %}
+      {% if site.twitter_username %}<a href="https://twitter.com/{{ site.twitter_username }}" target="_blank" rel="noopener noreferrer">twitter</a>{% endif %}
       <a href="/feed.xml">rss</a>
     </nav>
   </header>
@@ -44,14 +61,6 @@
 
 </div>
 
-<!-- Google Analytics -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=UA-90998461-1"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-  gtag('config', 'UA-90998461-1');
-</script>
 
 </body>
 </html>
