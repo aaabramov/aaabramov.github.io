@@ -1,3 +1,9 @@
+- slug: wireguard-protocol
+  title: "WireGuard, visually"
+  subtitle: "How an encrypted tunnel actually forms — handshake, routing, and a packet's journey."
+  tags: [networking, crypto, vpn]
+  published: 2026-06-12
+
 - slug: embeddings
   title: "Embeddings, visually"
   subtitle: "An interactive playground for how machines turn words into numbers."
