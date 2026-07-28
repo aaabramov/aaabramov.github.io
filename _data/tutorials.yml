@@ -1,3 +1,9 @@
+- slug: game-of-life-3d
+  title: "Conway's Life, in three dimensions"
+  subtitle: "Conway's rules don't survive the jump to 3D — an interactive explorer for the ones that do."
+  tags: [automata, webgl, simulation]
+  published: 2026-07-28
+
 - slug: wireguard-protocol
   title: "WireGuard, visually"
   subtitle: "How an encrypted tunnel actually forms — handshake, routing, and a packet's journey."
