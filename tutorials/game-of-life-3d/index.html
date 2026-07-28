@@ -1,0 +1,2085 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Conway's Life, in three dimensions</title>
+<meta name="description" content="Conway's Game of Life does not survive the jump to 3D. An interactive explorer for the rules that do — Carter Bays' 1987 candidates and the multi-state rules that came after." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%2305070d'/><rect x='3' y='3' width='5' height='5' fill='%23ffc46b'/><rect x='8' y='8' width='4' height='4' fill='%23cc3f48'/></svg>" />
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.185.1/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.185.1/examples/jsm/"
+  }
+}
+</script>
+<style>
+  :root {
+    --bg: #0b0e14;
+    --bg-2: #141925;
+    --bg-3: #1c2232;
+    --fg: #e6edf3;
+    --fg-dim: #9aa4b2;
+    --fg-dimmer: #5f6a7d;
+    --accent: #7aa2f7;
+    --accent-2: #bb9af7;
+    --accent-3: #7dcfff;
+    --warn: #e0af68;
+    --border: #2a3142;
+    --radius: 12px;
+    --mono: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, system-ui, sans-serif;
+
+    /* viewer chrome */
+    --scene: #05070d;
+    --panel-bg: rgba(14, 18, 30, 0.88);
+    --panel-edge: rgba(120, 150, 220, 0.16);
+    --panel-accent: #ffb254;
+    --panel-error: #ff7d7d;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.6;
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .container { max-width: 980px; margin: 0 auto; padding: 0 24px; }
+
+  a { color: var(--accent); }
+
+  /* ── hero ── */
+  header {
+    padding: 56px 0 44px;
+    background: radial-gradient(ellipse at top, rgba(255, 178, 84, 0.10), transparent 62%);
+    border-bottom: 1px solid var(--border);
+  }
+  .back {
+    display: inline-block;
+    margin-bottom: 26px;
+    color: var(--fg-dimmer);
+    font-size: 14px;
+    text-decoration: none;
+  }
+  .back:hover { color: var(--accent); }
+  h1 {
+    font-size: clamp(32px, 5vw, 52px);
+    line-height: 1.15;
+    margin: 0 0 16px;
+    letter-spacing: -0.02em;
+    background: linear-gradient(135deg, #ffc46b 0%, #cc3f48 52%, #7f3fb0 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 700;
+  }
+  .tagline {
+    font-size: clamp(17px, 2vw, 20px);
+    color: var(--fg-dim);
+    max-width: 660px;
+    margin: 0;
+  }
+  .hero-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    margin-top: 26px;
+  }
+  .hero-meta span,
+  .hero-meta a {
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    background: var(--bg-2);
+    color: var(--fg-dimmer);
+    font-size: 12.5px;
+    text-decoration: none;
+  }
+  .hero-meta a { color: var(--accent); border-color: rgba(122, 162, 247, 0.32); }
+  .hero-meta a:hover { background: var(--bg-3); border-color: var(--accent); }
+
+  /* ── sections ── */
+  section { padding: 46px 0; border-bottom: 1px solid var(--border); }
+  section:last-of-type { border-bottom: none; }
+  .eyebrow {
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  h2 {
+    font-size: clamp(21px, 2.6vw, 28px);
+    line-height: 1.28;
+    letter-spacing: -0.01em;
+    margin: 0 0 16px;
+    font-weight: 650;
+  }
+  h3 {
+    font-size: 16px;
+    margin: 0 0 8px;
+    font-weight: 650;
+  }
+  p { margin: 0 0 15px; max-width: 74ch; }
+  p:last-child { margin-bottom: 0; }
+  .lede { font-size: 17px; color: var(--fg-dim); }
+  em { color: var(--fg); font-style: italic; }
+  code {
+    padding: 1.5px 5px;
+    border-radius: 4px;
+    background: var(--bg-3);
+    color: var(--accent-3);
+    font-family: var(--mono);
+    font-size: 0.9em;
+  }
+
+  .callout {
+    margin: 22px 0 0;
+    padding: 15px 18px;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--warn);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    background: var(--bg-2);
+    font-size: 15px;
+  }
+  .callout strong { color: var(--warn); }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin-top: 22px;
+  }
+  .card {
+    padding: 16px 18px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-2);
+    font-size: 14.5px;
+    color: var(--fg-dim);
+  }
+  .card h3 { color: var(--fg); }
+  .card code { font-size: 0.88em; }
+
+  table {
+    width: 100%;
+    margin-top: 20px;
+    border-collapse: collapse;
+    font-size: 14.5px;
+  }
+  th, td {
+    padding: 9px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  th {
+    color: var(--fg-dimmer);
+    font-weight: 600;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  td:first-child { white-space: nowrap; }
+  td.rule { font-family: var(--mono); color: var(--accent-3); white-space: nowrap; }
+  .scroll-x { overflow-x: auto; }
+
+  /* ══════════════ the viewer ══════════════ */
+  .viewer-wrap { padding: 30px 0 34px; border-bottom: 1px solid var(--border); }
+
+  .viewer {
+    position: relative;
+    /* Tall enough that the control panel is never clipped at common window sizes. */
+    height: clamp(580px, 80vh, 860px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--scene);
+    overflow: hidden;
+  }
+  .viewer:fullscreen { height: 100%; border: none; border-radius: 0; }
+  /* Keyboard shortcuts only fire while the viewer holds focus, so show when it does. */
+  .viewer:focus-visible { outline: none; border-color: rgba(255, 178, 84, 0.55); }
+  .viewer:focus-within { border-color: rgba(255, 178, 84, 0.4); }
+
+  #view {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    touch-action: none;
+  }
+
+  #panel {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    width: 268px;
+    max-height: calc(100% - 24px);
+    overflow-y: auto;
+    padding: 14px 16px 12px;
+    border: 1px solid var(--panel-edge);
+    border-radius: 10px;
+    background: var(--panel-bg);
+    backdrop-filter: blur(14px);
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  #panel h4 {
+    margin: 0 0 9px;
+    font-size: 13px;
+    font-weight: 650;
+    letter-spacing: 0.02em;
+    color: var(--fg);
+  }
+  #panel .group { margin-bottom: 9px; }
+  #panel .group:last-child { margin-bottom: 0; }
+  #panel .split { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+  #panel hr { margin: 10px 0 0; border: none; border-top: 1px solid var(--panel-edge); }
+
+  #panel label {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--fg-dimmer);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+  }
+  #panel .hint { text-transform: none; letter-spacing: 0; opacity: 0.7; font-size: 10px; }
+  #panel .value {
+    float: right;
+    color: var(--fg);
+    text-transform: none;
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  #panel input[type="text"], #panel select {
+    width: 100%;
+    padding: 5px 7px;
+    border: 1px solid var(--panel-edge);
+    border-radius: 6px;
+    background: rgba(6, 9, 16, 0.85);
+    color: var(--fg);
+    font: inherit;
+    font-size: 12px;
+  }
+  #panel input[type="text"] { font-family: var(--mono); }
+  #panel input[type="text"]:focus, #panel select:focus {
+    outline: none;
+    border-color: rgba(255, 178, 84, 0.55);
+  }
+  #panel input[type="text"].invalid { border-color: var(--panel-error); }
+
+  #panel .row { display: flex; gap: 6px; }
+  #panel .row input { flex: 1; min-width: 0; }
+
+  #palette-preview {
+    height: 7px;
+    margin-top: 5px;
+    border: 1px solid var(--panel-edge);
+    border-radius: 4px;
+  }
+
+  #panel input[type="range"] {
+    width: 100%;
+    height: 17px;
+    margin: 0;
+    appearance: none;
+    background: transparent;
+  }
+  #panel input[type="range"]::-webkit-slider-runnable-track {
+    height: 3px;
+    border-radius: 2px;
+    background: rgba(120, 150, 220, 0.3);
+  }
+  #panel input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    margin-top: -5px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--panel-accent);
+  }
+  #panel input[type="range"]::-moz-range-track {
+    height: 3px;
+    border-radius: 2px;
+    background: rgba(120, 150, 220, 0.3);
+  }
+  #panel input[type="range"]::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border: none;
+    border-radius: 50%;
+    background: var(--panel-accent);
+  }
+
+  #panel button {
+    padding: 6px 9px;
+    border: 1px solid var(--panel-edge);
+    border-radius: 6px;
+    background: rgba(30, 38, 58, 0.7);
+    color: var(--fg);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  #panel button:hover {
+    border-color: rgba(160, 190, 255, 0.4);
+    background: rgba(42, 52, 78, 0.8);
+  }
+  #panel button.primary, #panel button.active {
+    border-color: rgba(255, 178, 84, 0.5);
+    background: rgba(255, 178, 84, 0.16);
+    color: var(--panel-accent);
+  }
+  #panel .buttons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+  #panel .buttons button { padding: 6px 3px; }
+
+  .error { margin: 6px 0 0; color: var(--panel-error); font-size: 11px; max-width: none; }
+  .error.notice { color: var(--fg-dimmer); }
+
+  #readout {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 1px 12px;
+    margin: 9px 0 0;
+  }
+  #readout dt { color: var(--fg-dimmer); font-size: 10.5px; }
+  #readout dd { margin: 0; text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; }
+
+  /* fullscreen + legend */
+  #fullscreen {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    padding: 6px 11px;
+    border: 1px solid var(--panel-edge);
+    border-radius: 6px;
+    background: var(--panel-bg);
+    backdrop-filter: blur(14px);
+    color: var(--fg-dim);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  #fullscreen:hover { color: var(--fg); border-color: rgba(160, 190, 255, 0.4); }
+
+  .legend {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 11px;
+    border: 1px solid var(--panel-edge);
+    border-radius: 6px;
+    background: var(--panel-bg);
+    backdrop-filter: blur(14px);
+    color: var(--fg-dimmer);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+  }
+  .legend-ramp {
+    width: 92px;
+    height: 7px;
+    border: 1px solid var(--panel-edge);
+    border-radius: 4px;
+  }
+
+  .viewer-hint {
+    margin: 12px auto 0;
+    max-width: 74ch;
+    color: var(--fg-dimmer);
+    font-size: 13.5px;
+    text-align: center;
+  }
+  .viewer-hint kbd {
+    padding: 1px 5px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: var(--bg-3);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--fg-dim);
+  }
+
+  .noscript {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+    text-align: center;
+    color: var(--fg-dim);
+  }
+
+  footer {
+    padding: 34px 0 60px;
+    color: var(--fg-dimmer);
+    font-size: 14px;
+  }
+  footer p { max-width: 74ch; }
+
+  @media (max-width: 860px) {
+    .viewer { height: auto; }
+    #view { position: relative; height: clamp(320px, 52vh, 460px); }
+    #panel {
+      position: relative;
+      top: 0;
+      left: 0;
+      width: 100%;
+      max-height: none;
+      border: none;
+      border-top: 1px solid var(--panel-edge);
+      border-radius: 0;
+      backdrop-filter: none;
+      background: rgba(10, 13, 22, 0.95);
+    }
+    #fullscreen { top: 10px; right: 10px; }
+    .legend { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="container">
+    <a class="back" href="/">← knowledge base</a>
+    <h1>Conway's Life,<br />in three dimensions</h1>
+    <p class="tagline">
+      Conway's rules don't survive the jump to 3D — <code>23/3</code> in a 26-neighbour
+      grid explodes on contact. This is an explorer for the rules that <em>do</em> work,
+      starting with the ones Carter Bays found in 1987.
+    </p>
+    <div class="hero-meta">
+      <span>runs entirely in your browser</span>
+      <span>64³ = 262,144 cells at ~8ms/step</span>
+      <span>no server, no data collected</span>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="container">
+    <div class="eyebrow">What you're looking at</div>
+    <h2>A cellular automaton living in a box.</h2>
+    <p class="lede">
+      Every cell in a 64×64×64 grid is either empty or alive. On each tick, a cell looks at
+      its 26 neighbours and a short rule decides whether it lives, dies, or is born. Nobody
+      designs the shapes you see — they're the only thing the rule permits.
+    </p>
+    <p class="lede">
+      Press <strong>Play</strong>, drag to orbit, and try a few presets. Everything below the
+      viewer is optional reading.
+    </p>
+    <div class="callout">
+      <strong>Why the cubes are different sizes and colours.</strong> In most of these rules a
+      dying cell doesn't vanish at once — it fades through a fixed number of <em>decay
+      generations</em> first. Freshly born cells are drawn large and bright; cells partway
+      through dying shrink towards small dark specks. That's what lets you see into the
+      volume instead of only ever seeing its outer shell.
+    </div>
+  </div>
+</section>
+
+<div class="viewer-wrap">
+  <div class="container">
+    <div class="viewer" id="viewer" tabindex="0" aria-label="3D cellular automaton viewer">
+      <canvas id="view"></canvas>
+      <noscript><div class="noscript">This explorer needs JavaScript and WebGL to run.</div></noscript>
+
+      <button id="fullscreen" type="button">Fullscreen</button>
+
+      <div class="legend">
+        <span>dying</span>
+        <div class="legend-ramp" id="legend-ramp"></div>
+        <span>fresh</span>
+      </div>
+
+      <aside id="panel">
+        <h4>Life 3D</h4>
+
+        <div class="group">
+          <label for="preset">Preset</label>
+          <select id="preset"></select>
+        </div>
+
+        <div class="group">
+          <label for="palette">Palette <span class="hint">oldest → freshest</span></label>
+          <select id="palette"></select>
+          <div id="palette-preview" aria-hidden="true"></div>
+        </div>
+
+        <div class="group">
+          <label for="rule">Rule <span class="hint">survive / born / states / M·N</span></label>
+          <div class="row">
+            <input id="rule" type="text" spellcheck="false" autocomplete="off" />
+            <button id="apply">Apply</button>
+          </div>
+          <p id="rule-error" class="error" hidden></p>
+        </div>
+
+        <div class="group split">
+          <div>
+            <label for="states">States <span id="states-value" class="value">2</span></label>
+            <input id="states" type="range" min="2" max="24" step="1" value="2" />
+          </div>
+          <div>
+            <label for="neighbourhood">Neighbours</label>
+            <select id="neighbourhood">
+              <option value="M">Moore (26)</option>
+              <option value="N">von Neumann (6)</option>
+            </select>
+          </div>
+        </div>
+
+        <hr />
+
+        <div class="group split" style="margin-top:11px">
+          <div>
+            <label for="size">Grid</label>
+            <select id="size">
+              <option value="32">32³</option>
+              <option value="48">48³</option>
+              <option value="64" selected>64³</option>
+              <option value="96">96³</option>
+            </select>
+          </div>
+          <div>
+            <label for="speed">Speed <span id="speed-value" class="value">15/s</span></label>
+            <input id="speed" type="range" min="1" max="60" step="1" value="15" />
+          </div>
+        </div>
+
+        <div class="group split">
+          <div>
+            <label for="seed-size">Seed cube <span id="seed-size-value" class="value">12</span></label>
+            <input id="seed-size" type="range" min="2" max="96" step="1" value="12" />
+          </div>
+          <div>
+            <label for="density">Density <span id="density-value" class="value">0.35</span></label>
+            <input id="density" type="range" min="0.05" max="1" step="0.05" value="0.35" />
+          </div>
+        </div>
+
+        <div class="group buttons">
+          <button id="play" class="primary">Play</button>
+          <button id="step">Step</button>
+          <button id="reseed">Reseed</button>
+          <button id="clear">Clear</button>
+        </div>
+
+        <hr />
+
+        <dl id="readout">
+          <dt>Generation</dt><dd id="stat-generation">0</dd>
+          <dt>Population</dt><dd id="stat-population">0</dd>
+          <dt>Step time</dt><dd id="stat-steptime">—</dd>
+          <dt>Frame rate</dt><dd id="stat-fps">—</dd>
+        </dl>
+      </aside>
+    </div>
+
+    <p class="viewer-hint">
+      Drag to orbit · scroll to zoom · click the viewer, then
+      <kbd>Space</kbd> play · <kbd>S</kbd> step · <kbd>R</kbd> reseed ·
+      <kbd>C</kbd> clear · <kbd>P</kbd> next palette
+    </p>
+  </div>
+</div>
+
+<section>
+  <div class="container">
+    <div class="eyebrow">01 · The problem</div>
+    <h2>Conway's rule dies immediately in 3D.</h2>
+    <p>
+      In two dimensions a cell has 8 neighbours, and
+      <a href="https://en.wikipedia.org/wiki/Conway%27s_Game_of_Life">Conway's Life</a> is
+      written <code>23/3</code>: survive on 2 or 3 neighbours, be born on exactly 3. That
+      balance is the whole reason it produces gliders and still lifes instead of noise or
+      emptiness.
+    </p>
+    <p>
+      Move to a cube and a cell suddenly has <strong>26</strong> neighbours. "Born on exactly
+      3" now fires almost everywhere, because in any half-populated region three live
+      neighbours is nearly guaranteed. The grid saturates within a few generations. Nudge the
+      numbers the other way and everything starves instead. The interesting band is narrow,
+      and <code>23/3</code> is nowhere near it.
+    </p>
+    <div class="callout">
+      <strong>Try it.</strong> Type <code>2-3/3/2/M</code> into the rule box — Conway's exact
+      rule, lifted into 3D — and press Apply. It collapses almost at once. Now switch to a
+      Bays preset and watch the difference.
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <div class="eyebrow">02 · The fix</div>
+    <h2>Carter Bays went looking for the rules that balance.</h2>
+    <p>
+      In
+      <a href="https://www.complex-systems.com/abstracts/v01_i03_a01/"><em>Candidates for the
+      Game of Life in Three Dimensions</em></a> (Complex Systems 1, 1987, 373–400 —
+      <a href="https://content.wolfram.com/sites/13/2018/02/01-3-1.pdf">full PDF</a>), Bays
+      searched the 3D rule space for rules that neither die out nor explode, and published the
+      survivors. He writes a rule as a 4-tuple of <em>environment</em> and <em>fertility</em>
+      bounds, printed as four digits: the first pair is the survival range, the second the
+      birth range. Conway's own rule is <code>2333</code> in that notation, so
+      <strong>5766</strong> means survive on 5 to 7 neighbours, be born on exactly 6.
+    </p>
+    <p>
+      <strong>5766</strong> is his headline result, and it has a <em>glider</em> — a pattern
+      that translates through space rather than sitting still or oscillating. Finding one was
+      the main evidence that 3D Life is genuinely Life-like and not just noise with good PR.
+    </p>
+    <div class="callout">
+      <strong>They look quiet, and that's correct.</strong> Drop a random soup into any of the
+      three Bays rules and it mostly collapses into sparse leftover debris within about fifty
+      generations — exactly what Conway's <code>23/3</code> does in 2D. The interesting phase
+      is the beginning. Use <strong>Step</strong> rather than Play, and expect stillness at
+      the end rather than a light show.
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <div class="eyebrow">03 · Decay states</div>
+    <h2>Later rules let cells die slowly, which is why they look organic.</h2>
+    <p>
+      A binary rule gives every live cell the same value, so the render is a single flat
+      colour — you can see the shape and nothing else. The hobbyist strand that grew up around
+      Softology's <em>Visions of Chaos</em>
+      (<a href="https://softologyblog.wordpress.com/2019/12/28/3d-cellular-automata-3/">3D
+      Cellular Automata</a>, which is where most of the rule names in circulation come from)
+      adds one parameter: a cell is born at full strength and counts down through
+      <strong>N states</strong> before it's finally gone.
+    </p>
+    <p>
+      That single change is what turns a box of blinking cubes into something that looks
+      grown. It also carries real information — the decay value tells you how recently each
+      part of the structure was built, so you can see where a pattern is actively working
+      versus where it's just cooling off.
+    </p>
+    <div class="cards">
+      <div class="card">
+        <h3>Only fresh cells count</h3>
+        A decaying cell is not counted as a neighbour by anyone. It occupies its site and
+        blocks new births there, but it no longer participates.
+      </div>
+      <div class="card">
+        <h3>Decay is unstoppable</h3>
+        Once a cell starts counting down it will reach zero regardless of what its neighbours
+        do. Nothing rescues it.
+      </div>
+      <div class="card">
+        <h3>Two states means no decay</h3>
+        Set states to 2 and you get Bays' original binary behaviour back, monochrome and all.
+        Drag the states slider on a living pattern to watch it change character.
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <div class="eyebrow">04 · Reading a rule</div>
+    <h2>Every rule here is four fields.</h2>
+    <div class="scroll-x">
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Means</th><th>Examples</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>survive</strong></td>
+            <td>neighbour counts at which a living cell stays alive</td>
+            <td class="rule">5-7 · 4,6,8-9</td>
+          </tr>
+          <tr>
+            <td><strong>born</strong></td>
+            <td>neighbour counts at which an empty cell comes alive</td>
+            <td class="rule">6 · 13-14,17-19</td>
+          </tr>
+          <tr>
+            <td><strong>states</strong></td>
+            <td>2 for classic binary; higher adds that many decay generations</td>
+            <td class="rule">2 · 10</td>
+          </tr>
+          <tr>
+            <td><strong>neighbourhood</strong></td>
+            <td><code>M</code> = Moore, all 26 surrounding cells · <code>N</code> = von Neumann, the 6 face-touching ones</td>
+            <td class="rule">M · N</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:20px">
+      So <code>5-7/6/2/M</code> is Bays 5766, and <code>4-7/6-8/10/M</code> is Pyroclastic:
+      survive on 4 to 7, born on 6 to 8, ten decay states, Moore neighbourhood.
+    </p>
+    <div class="callout">
+      <strong>Seeding is part of the rule, not a detail.</strong> Each preset also sets a seed
+      size and density, because a rule needing 13 live neighbours to sustain itself simply
+      cannot survive a sparse start — and one with a narrow survival window drowns in a dense
+      one. The Bays rules die instantly at density 0.35, since 26 neighbours at that density
+      averages about 9 live ones, well above 5766's ceiling of 7.
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <div class="eyebrow">05 · Things worth trying</div>
+    <h2>Where the interesting behaviour hides.</h2>
+    <div class="cards">
+      <div class="card">
+        <h3>Sweep the states slider</h3>
+        Pick <strong>Pyroclastic</strong>, let it grow, then drag states from 10 down to 2.
+        Editing by hand keeps the current pattern, so you watch the same structure go from
+        organic to crisp.
+      </div>
+      <div class="card">
+        <h3>Watch a crystal grow</h3>
+        <strong>Crystal Growth</strong> starts from 8 cells and never kills anything — survive
+        <code>0-6</code> covers every von Neumann count — so it's pure accretion with fractal
+        faces until it hits the walls.
+      </div>
+      <div class="card">
+        <h3>Switch to Mono</h3>
+        With hue removed, only the geometry is left. It's the best palette for reading what a
+        structure actually <em>is</em> rather than how fresh it is.
+      </div>
+      <div class="card">
+        <h3>Break it deliberately</h3>
+        Try <code>0-26/0-26/2/M</code> to fill the box instantly, or <code>1/26/2/M</code> for
+        a rule almost nothing can satisfy. Invalid strings report the problem instead of
+        breaking the page.
+      </div>
+      <div class="card">
+        <h3>Turn the grid up</h3>
+        96³ is 884,736 cells at roughly 27ms a step. Slower, but the structures get room to
+        develop before they hit a wall.
+      </div>
+      <div class="card">
+        <h3>Find your own rules</h3>
+        Most of the rule space is dull — of 400 random rules, about 58% went extinct, 22% were
+        too sparse to see and 17% filled the box. Three of the presets here were found by
+        searching for the remainder.
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <div class="eyebrow">06 · Honest limits</div>
+    <h2>What this doesn't do.</h2>
+    <div class="cards">
+      <div class="card">
+        <h3>No universal computer</h3>
+        Conway's Life can compute anything. There's no known 3D equivalent — a glider is as
+        far as the analogy has been carried.
+      </div>
+      <div class="card">
+        <h3>Bounded box, not a torus</h3>
+        Cells outside the grid are permanently dead. Wrapping makes growth rules collide with
+        themselves and muddies the structure.
+      </div>
+      <div class="card">
+        <h3>Dense rules hide their insides</h3>
+        Shrinking decayed cells buys you three or four layers of depth, not x-ray vision. A
+        rule occupying a third of the box still mostly shows you its shell.
+      </div>
+      <div class="card">
+        <h3>Some famous presets are missing</h3>
+        Names like <em>Amoeba</em> and <em>Coral</em> circulate widely, but the rule numbers I
+        had for them froze solid or filled the box when measured. They're left out rather than
+        shipped mislabelled.
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <div class="eyebrow">07 · Sources</div>
+    <h2>Where this comes from.</h2>
+    <p class="lede">
+      Almost nothing here is original — the rules, the notation and the decay convention are
+      all borrowed. These are the places worth reading.
+    </p>
+
+    <div class="cards">
+      <div class="card">
+        <h3>Carter Bays (1987)</h3>
+        <a href="https://www.complex-systems.com/abstracts/v01_i03_a01/">Candidates for the
+        Game of Life in Three Dimensions</a>, Complex Systems <strong>1</strong> (1987)
+        373–400 · <a href="https://content.wolfram.com/sites/13/2018/02/01-3-1.pdf">PDF</a>.
+        The origin of 5766, 4555 and 5655, the four-digit notation, and the 3D glider.
+      </div>
+      <div class="card">
+        <h3>Softology's Blog</h3>
+        <a href="https://softologyblog.wordpress.com/2019/12/28/3d-cellular-automata-3/">3D
+        Cellular Automata</a> by Jason Rampe. The source of the decay-state convention this
+        implements, and of most named 3D rules in circulation.
+      </div>
+      <div class="card">
+        <h3>Conway's Game of Life</h3>
+        <a href="https://en.wikipedia.org/wiki/Conway%27s_Game_of_Life">Wikipedia</a> — the 2D
+        original, and the best starting point if <code>23/3</code> is new to you.
+      </div>
+      <div class="card">
+        <h3>three.js</h3>
+        <a href="https://threejs.org">threejs.org</a> — the WebGL renderer. Living cells are
+        instances of a single cube geometry; the simulation itself is plain typed arrays on
+        the CPU.
+      </div>
+      <div class="card">
+        <h3>viridis</h3>
+        The <em>Viridis</em> palette follows the colormap by Stéfan van der Walt and Nathaniel
+        Smith (<a href="https://bids.github.io/colormap/">matplotlib colormaps</a>), chosen
+        because its lightness rises evenly from end to end.
+      </div>
+      <div class="card">
+        <h3>This page</h3>
+        The simulation is a padded <code>(n+2)³</code> typed array with a dead border, so the
+        inner loop needs no bounds checks. Roughly 8ms per generation at 64³.
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <p>
+      Built by <a href="/">Andrii Abramov</a> ·
+      rules after <a href="https://www.complex-systems.com/abstracts/v01_i03_a01/">Bays
+      (1987)</a>, decay states after
+      <a href="https://softologyblog.wordpress.com/2019/12/28/3d-cellular-automata-3/">Softology</a>,
+      rendered with <a href="https://threejs.org">three.js</a>.
+    </p>
+  </div>
+</footer>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ═══ src/palettes.js ═════════════════════════════════════════════
+
+/**
+ * Colour ramps for cell state.
+ *
+ * State is ordinal — a cell counts down from "just born" to "about to die" — so the
+ * ramp has one job: make that order readable at a glance. Two properties are what
+ * make it work, and both are checked in test/palettes.test.js rather than eyeballed:
+ *
+ *   1. Lightness increases monotonically from the first stop to the last. Fresh cells
+ *      are always the brightest thing on screen. If lightness wanders, the ordering
+ *      stops being legible and stays illegible under any colour-vision deficiency,
+ *      because lightness is the one channel everyone shares.
+ *
+ *   2. Even the darkest stop stays clear of the background. A ramp that fades to
+ *      black on a near-black surface just deletes its own dying cells.
+ *
+ * Hue is free to travel — these are multi-hue ramps in the manner of viridis and
+ * inferno, where hue adds discriminability on top of the lightness ordering rather
+ * than replacing it. That is why a rainbow is still wrong: it is not monotone in
+ * lightness, so it fails property 1.
+ */
+
+/** The scene background. Ramps are validated for contrast against this. */
+const BACKGROUND = 0x05070d;
+
+/**
+ * `stops` run darkest (oldest cell) to lightest (freshest). `edge` tints the grid
+ * wireframe so it sits with the ramp instead of fighting it.
+ */
+const PALETTES = [
+  {
+    name: 'Ember',
+    edge: 0x2a3550,
+    stops: [0x1b1f5c, 0x4b1f7a, 0x93276d, 0xcc3f48, 0xef8734, 0xffc46b],
+  },
+  {
+    name: 'Ice',
+    edge: 0x23405e,
+    stops: [0x152a63, 0x175f8d, 0x1e93aa, 0x45c2c0, 0x93e5da, 0xe2f8f5],
+  },
+  {
+    name: 'Viridis',
+    edge: 0x2c4257,
+    stops: [0x482878, 0x3e4a89, 0x31688e, 0x26a97e, 0x6cce59, 0xfde725],
+  },
+  {
+    name: 'Neon',
+    edge: 0x3a2a5c,
+    stops: [0x241b6b, 0x5f1f96, 0xa626a0, 0xe2459d, 0xff86c6, 0xffd4ec],
+  },
+  {
+    name: 'Acid',
+    edge: 0x27452f,
+    stops: [0x14432c, 0x1f7a45, 0x54ab35, 0x9fd42d, 0xdcf05c, 0xf6ffc6],
+  },
+  {
+    name: 'Mono',
+    edge: 0x333b49,
+    stops: [0x2e3440, 0x4d5567, 0x71798c, 0x99a1b2, 0xc4cad6, 0xf2f5fb],
+  },
+];
+
+/** sRGB channel to linear light. */
+function linearise(channel) {
+  return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+}
+
+/**
+ * Perceptual lightness (OKLab L) of a 0xRRGGBB colour, 0..1.
+ * Exported so the palette rules are checked by running code, not by judgement.
+ */
+function lightness(hex) {
+  const r = linearise(((hex >> 16) & 0xff) / 255);
+  const g = linearise(((hex >> 8) & 0xff) / 255);
+  const b = linearise((hex & 0xff) / 255);
+
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+
+  return 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s;
+}
+
+/** The default palette, used before anything is chosen. */
+const DEFAULT_PALETTE = 'Ember';
+
+function findPalette(name) {
+  return PALETTES.find((palette) => palette.name === name) ?? PALETTES[0];
+}
+
+
+
+// ═══ src/rule.js ═════════════════════════════════════════════════
+
+/**
+ * 3D cellular-automaton rules.
+ *
+ * Rule string format:  survive / born / states / neighborhood
+ *
+ *   survive, born  comma-separated neighbour counts, ranges allowed: "5-7", "4,6,8-9"
+ *   states         2..256. 2 is classic binary Life; >2 adds decay generations.
+ *   neighborhood   M = Moore (26 neighbours), N = von Neumann (6 face neighbours)
+ *
+ * Examples:  "5-7/6/2/M" is Bays 5766.  "4/4/5/M" is the classic 445.
+ */
+
+/** Neighbour count for each neighbourhood type. */
+const NEIGHBOUR_COUNT = { M: 26, N: 6 };
+
+const MIN_STATES = 2;
+const MAX_STATES = 256; // state must fit in a Uint8Array cell
+
+/**
+ * Parse a comma-separated list of counts and ranges into a sorted array.
+ * Throws on anything malformed rather than quietly returning a partial list.
+ */
+function parseCounts(field, max, label) {
+  const text = field.trim();
+  if (text === '') {
+    throw new Error(`${label} list is empty — use e.g. "5-7" or "4,6,8"`);
+  }
+
+  const counts = new Set();
+  for (const token of text.split(',')) {
+    const part = token.trim();
+    const range = /^(\d+)\s*-\s*(\d+)$/.exec(part);
+    const single = /^(\d+)$/.exec(part);
+
+    let lo, hi;
+    if (range) {
+      lo = Number(range[1]);
+      hi = Number(range[2]);
+      if (lo > hi) throw new Error(`${label} range "${part}" is backwards`);
+    } else if (single) {
+      lo = hi = Number(single[1]);
+    } else {
+      throw new Error(`${label} entry "${part}" is not a number or range`);
+    }
+
+    if (hi > max) {
+      throw new Error(`${label} count ${hi} exceeds ${max} neighbours available`);
+    }
+    for (let c = lo; c <= hi; c++) counts.add(c);
+  }
+  return [...counts].sort((a, b) => a - b);
+}
+
+/** Render a sorted count array back to compact range notation: [5,6,7] -> "5-7". */
+function formatCounts(counts) {
+  const sorted = [...counts].sort((a, b) => a - b);
+  const parts = [];
+  let i = 0;
+  while (i < sorted.length) {
+    const start = sorted[i];
+    let end = start;
+    while (i + 1 < sorted.length && sorted[i + 1] === end + 1) {
+      end = sorted[++i];
+    }
+    parts.push(start === end ? `${start}` : `${start}-${end}`);
+    i++;
+  }
+  return parts.join(',');
+}
+
+/**
+ * Parse a rule string into { survive, born, states, neighbourhood }.
+ * survive/born are sorted arrays of neighbour counts.
+ * @throws {Error} with a human-readable message on any malformed input
+ */
+function parseRule(text) {
+  if (typeof text !== 'string') throw new Error('rule must be a string');
+
+  const fields = text.trim().split('/');
+  if (fields.length !== 4) {
+    throw new Error(
+      `expected 4 fields "survive/born/states/neighbourhood", got ${fields.length}`,
+    );
+  }
+
+  const neighbourhood = fields[3].trim().toUpperCase();
+  if (!(neighbourhood in NEIGHBOUR_COUNT)) {
+    throw new Error(`neighbourhood must be M or N, got "${fields[3].trim()}"`);
+  }
+  const max = NEIGHBOUR_COUNT[neighbourhood];
+
+  const statesText = fields[2].trim();
+  if (!/^\d+$/.test(statesText)) {
+    throw new Error(`states must be a whole number, got "${statesText}"`);
+  }
+  const states = Number(statesText);
+  if (states < MIN_STATES || states > MAX_STATES) {
+    throw new Error(`states must be ${MIN_STATES}..${MAX_STATES}, got ${states}`);
+  }
+
+  return {
+    survive: parseCounts(fields[0], max, 'survive'),
+    born: parseCounts(fields[1], max, 'born'),
+    states,
+    neighbourhood,
+  };
+}
+
+/** Inverse of parseRule. parseRule(formatRule(r)) round-trips. */
+function formatRule(rule) {
+  return [
+    formatCounts(rule.survive),
+    formatCounts(rule.born),
+    rule.states,
+    rule.neighbourhood,
+  ].join('/');
+}
+
+/**
+ * Presets.
+ *
+ * `seed` carries the seeding regime the rule needs, because that is not incidental:
+ * a rule requiring 13 live neighbours to sustain itself simply cannot survive a
+ * sparse seed, and a rule with a narrow survival window drowns in a dense one.
+ *
+ * Every entry here was run at 64^3 for 200 generations and checked for occupancy and
+ * churn before being included — see README.md. Rules that were remembered but did not
+ * behave as their name claims were dropped rather than shipped mislabelled.
+ */
+const PRESETS = [
+  // Carter Bays, "Candidates for the Game of Life in Three Dimensions"
+  // (Complex Systems 1:3, 1987). Written there as four digits: the first pair is the
+  // survival ("environment") range, the second the birth ("fertility") range.
+  // Like Conway's 23/3, a random soup mostly collapses into sparse stable debris —
+  // the interesting phase is the first few dozen generations.
+  { name: 'Bays 5766 (glider)', rule: '5-7/6/2/M', seed: { side: 30, density: 0.25 } },
+  { name: 'Bays 4555', rule: '4-5/5/2/M', seed: { side: 30, density: 0.2 } },
+  { name: 'Bays 5655', rule: '5-6/5/2/M', seed: { side: 30, density: 0.25 } },
+
+  // Multi-state rules, in the Softology / Visions of Chaos tradition of adding decay
+  // generations to soften the automaton into something organic.
+  { name: '445', rule: '4/4/5/M', seed: { side: 12, density: 0.35 } },
+  { name: 'Pyroclastic', rule: '4-7/6-8/10/M', seed: { side: 20, density: 0.3 } },
+  { name: 'Builder', rule: '2,6,9/4,6,8-9/10/M', seed: { side: 16, density: 0.3 } },
+  // Nothing ever dies under this one (survive 0-6 covers every von Neumann count),
+  // so it is monotone growth: a crystal with fractal faces that saturates the box.
+  { name: 'Crystal Growth', rule: '0-6/1,3/2/N', seed: { side: 2, density: 1 } },
+
+  // Found by tools/search-rules.js rather than inherited, so these carry descriptive
+  // names earned by watching them, not borrowed ones. Measured at 64^3 over 200
+  // generations: occupancy 10%, 7% and 18%, activity 0.17, 0.23 and 0.27.
+  { name: 'Lace', rule: '4-5/4/12/M', seed: { side: 20, density: 0.3 } },
+  { name: 'Nebula', rule: '2,4,11/4/9/M', seed: { side: 20, density: 0.3 } },
+  { name: 'Reef', rule: '3/4,13-14/8/M', seed: { side: 20, density: 0.3 } },
+];
+
+/** The preset matching a rule, or undefined if the rule has been edited by hand. */
+function findPreset(rule) {
+  const text = formatRule(rule);
+  return PRESETS.find((preset) => formatRule(parseRule(preset.rule)) === text);
+}
+
+
+
+// ═══ src/automaton.js ════════════════════════════════════════════
+
+/**
+ * The simulation. No DOM, no Three.js — pure data, so it can be tested under `node --test`.
+ *
+ * Semantics (Generations-style, matching what the Softology preset tradition assumes):
+ *
+ *   - A cell holds 0 (dead) .. states-1 (freshly alive, "max state").
+ *   - Only max-state cells count as neighbours. Decaying cells do not.
+ *   - Birth happens only in cells holding 0. A decaying cell occupies its site
+ *     and blocks birth there.
+ *   - A max-state cell whose live-neighbour count is in `survive` stays at max state.
+ *   - Otherwise it drops to states-2 and then decrements every step regardless of
+ *     neighbours until it reaches 0.
+ *   - With states === 2 this reduces exactly to Bays' binary rules: no decay phase.
+ *
+ * The grid is a bounded box, not a torus. Cells outside are permanently dead.
+ *
+ * Storage is padded to (n+2)^3 with a one-cell dead border. That border is never
+ * written, which removes all bounds checking from the inner loop and lets the
+ * neighbour offsets be plain constant integers.
+ */
+
+
+/** Build the flat index offsets of the neighbourhood for a given padded pitch. */
+function buildOffsets(neighbourhood, pitch) {
+  const plane = pitch * pitch;
+  const offsets = [];
+
+  if (neighbourhood === 'N') {
+    offsets.push(-1, 1, -pitch, pitch, -plane, plane);
+  } else {
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0 && dz === 0) continue;
+          offsets.push(dx + dy * pitch + dz * plane);
+        }
+      }
+    }
+  }
+
+  if (offsets.length !== NEIGHBOUR_COUNT[neighbourhood]) {
+    throw new Error(`built ${offsets.length} offsets for neighbourhood ${neighbourhood}`);
+  }
+  return Int32Array.from(offsets);
+}
+
+/** Turn a count list into a 0/1 lookup table, so the hot loop avoids Set.has(). */
+function buildTable(counts) {
+  const table = new Uint8Array(27);
+  for (const c of counts) table[c] = 1;
+  return table;
+}
+
+class Automaton {
+  /**
+   * @param {number} size interior side length (the grid is size^3 live cells)
+   * @param {object} rule as returned by parseRule()
+   */
+  constructor(size, rule) {
+    this.generation = 0;
+    this._allocate(size);
+    this.setRule(rule);
+  }
+
+  _allocate(size) {
+    if (!Number.isInteger(size) || size < 1) {
+      throw new Error(`size must be a positive integer, got ${size}`);
+    }
+    this.size = size;
+    this.pitch = size + 2;
+    const total = this.pitch ** 3;
+    // Both buffers start zeroed, and only interior cells are ever written, so the
+    // one-cell border stays dead for the lifetime of the grid.
+    this.cells = new Uint8Array(total);
+    this._back = new Uint8Array(total);
+  }
+
+  /** Swap in a new rule, clamping any cell that exceeds the new max state. */
+  setRule(rule) {
+    this.rule = rule;
+    this._offsets = buildOffsets(rule.neighbourhood, this.pitch);
+    this._surviveTable = buildTable(rule.survive);
+    this._bornTable = buildTable(rule.born);
+
+    const maxState = rule.states - 1;
+    for (let i = 0; i < this.cells.length; i++) {
+      if (this.cells[i] > maxState) this.cells[i] = maxState;
+    }
+  }
+
+  /** Reallocate for a new grid size. Clears the grid and resets the generation. */
+  resize(size) {
+    if (size === this.size) return;
+    this._allocate(size);
+    this._offsets = buildOffsets(this.rule.neighbourhood, this.pitch);
+    this.generation = 0;
+  }
+
+  /** Flat index of an interior coordinate. x, y, z are 0-based in 0..size-1. */
+  index(x, y, z) {
+    return x + 1 + this.pitch * (y + 1 + this.pitch * (z + 1));
+  }
+
+  get(x, y, z) {
+    return this.cells[this.index(x, y, z)];
+  }
+
+  set(x, y, z, value) {
+    this.cells[this.index(x, y, z)] = value;
+  }
+
+  clear() {
+    this.cells.fill(0);
+    this.generation = 0;
+  }
+
+  /**
+   * Fill a centred cube with random max-state cells.
+   * @param {number} side side length of the seeded region
+   * @param {number} density probability each cell in that region starts alive
+   * @param {() => number} rng injectable for deterministic tests
+   */
+  seed(side, density, rng = Math.random) {
+    this.clear();
+    const maxState = this.rule.states - 1;
+    const clamped = Math.max(1, Math.min(side, this.size));
+    const lo = Math.floor((this.size - clamped) / 2);
+    const hi = lo + clamped - 1;
+
+    for (let z = lo; z <= hi; z++) {
+      for (let y = lo; y <= hi; y++) {
+        for (let x = lo; x <= hi; x++) {
+          if (rng() < density) this.set(x, y, z, maxState);
+        }
+      }
+    }
+  }
+
+  /** Count of non-zero cells (alive or decaying). */
+  get population() {
+    let n = 0;
+    for (let i = 0; i < this.cells.length; i++) {
+      if (this.cells[i] !== 0) n++;
+    }
+    return n;
+  }
+
+  /** Advance one generation. */
+  step() {
+    const { cells, _back: back, pitch, size } = this;
+    const offsets = this._offsets;
+    const surviveTable = this._surviveTable;
+    const bornTable = this._bornTable;
+    const offsetCount = offsets.length;
+    const maxState = this.rule.states - 1;
+    const decayed = maxState - 1; // 0 when states === 2, i.e. instant death
+
+    for (let z = 1; z <= size; z++) {
+      for (let y = 1; y <= size; y++) {
+        let i = 1 + pitch * (y + pitch * z);
+        for (let x = 1; x <= size; x++, i++) {
+          const value = cells[i];
+
+          // A decaying cell counts down regardless of its neighbours, so skip
+          // the neighbour scan entirely for it.
+          if (value !== 0 && value !== maxState) {
+            back[i] = value - 1;
+            continue;
+          }
+
+          let count = 0;
+          for (let k = 0; k < offsetCount; k++) {
+            if (cells[i + offsets[k]] === maxState) count++;
+          }
+
+          if (value === maxState) {
+            back[i] = surviveTable[count] ? maxState : decayed;
+          } else {
+            back[i] = bornTable[count] ? maxState : 0;
+          }
+        }
+      }
+    }
+
+    this.cells = back;
+    this._back = cells;
+    this.generation++;
+  }
+
+  /**
+   * Call cb(x, y, z, state) for every non-zero interior cell.
+   * Coordinates are 0-based in 0..size-1.
+   */
+  forEachAlive(cb) {
+    const { cells, pitch, size } = this;
+    for (let z = 0; z < size; z++) {
+      for (let y = 0; y < size; y++) {
+        let i = 1 + pitch * (y + 1 + pitch * (z + 1));
+        for (let x = 0; x < size; x++, i++) {
+          const value = cells[i];
+          if (value !== 0) cb(x, y, z, value);
+        }
+      }
+    }
+  }
+}
+
+
+
+// ═══ src/renderer.js ═════════════════════════════════════════════
+
+/**
+ * Three.js view of an Automaton.
+ *
+ * Every non-zero cell is one instance of a unit cube. A cell's state drives both its
+ * size and its colour: freshly born cells are full-size and bright, decaying cells
+ * shrink towards specks and cool off.
+ *
+ * The shrinking is what makes the interior of the volume visible. Per-instance alpha
+ * would be the obvious alternative, but instanced geometry is not depth-sorted, so
+ * transparent instances blend in draw order and look wrong from most angles. Gaps
+ * between shrunken opaque cubes give real see-through depth with no sorting problem.
+ */
+
+
+// A freshly born cell is deliberately smaller than its cell, so even a fully packed
+// region keeps gaps between cubes and you can see past the outer shell. At scale 1.0
+// the surface welds into an airtight wall and the interior becomes invisible.
+const MAX_SCALE = 0.86;
+const MIN_SCALE = 0.16; // a cell on its last generation before death
+
+class Renderer {
+  constructor(canvas) {
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1;
+
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(BACKGROUND);
+
+    this.camera = new THREE.PerspectiveCamera(50, 1, 0.1, 4000);
+
+    this.controls = new OrbitControls(this.camera, canvas);
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.08;
+    this.controls.rotateSpeed = 0.85;
+
+    this.scene.add(new THREE.HemisphereLight(0x9fc4ff, 0x241a12, 1.1));
+
+    this._key = new THREE.DirectionalLight(0xffffff, 1.5);
+    this._key.position.set(1, 1.35, 0.75);
+    this.scene.add(this._key);
+
+    this._fill = new THREE.DirectionalLight(0x87a6ff, 0.55);
+    this._fill.position.set(-0.9, -0.5, -1);
+    this.scene.add(this._fill);
+
+    this._geometry = new THREE.BoxGeometry(1, 1, 1);
+    this._material = new THREE.MeshLambertMaterial();
+    this._mesh = null;
+    this._capacity = 0;
+
+    this._bounds = null;
+    this._scratch = null;
+    this._ramp = null;
+    this._rampKey = null;
+    this.palette = findPalette(DEFAULT_PALETTE);
+
+    this.drawn = 0;
+
+    this.resizeToDisplay();
+  }
+
+  /** Match the drawing buffer to the canvas's on-screen size. */
+  resizeToDisplay() {
+    const canvas = this.renderer.domElement;
+    const width = canvas.clientWidth || 1;
+    const height = canvas.clientHeight || 1;
+    this.renderer.setSize(width, height, false);
+    this.camera.aspect = width / height;
+    this.camera.updateProjectionMatrix();
+  }
+
+  /** Frame the grid and (re)draw its bounding wireframe. Call whenever size changes. */
+  fitTo(size) {
+    if (this._bounds) {
+      this.scene.remove(this._bounds);
+      this._bounds.geometry.dispose();
+      this._bounds.material.dispose();
+    }
+
+    const box = new THREE.BoxGeometry(size, size, size);
+    this._bounds = new THREE.LineSegments(
+      new THREE.EdgesGeometry(box),
+      new THREE.LineBasicMaterial({ color: this.palette.edge }),
+    );
+    box.dispose();
+    this.scene.add(this._bounds);
+
+    // Fog fades the far side of the volume into the background, which reads as depth.
+    // The near face sits about 1.8 side lengths from the camera and the far face about
+    // 3.5, so the ramp has to start beyond the former to avoid greying out everything.
+    this.scene.fog = new THREE.Fog(BACKGROUND, size * 1.9, size * 4.2);
+
+    // The box's half-diagonal is size*0.87, which at a 50 degree vertical field of
+    // view needs roughly 2.1x the side length to fit. Go wider for margin.
+    const distance = size * 2.5;
+    this.camera.position.set(distance * 0.62, distance * 0.46, distance * 0.72);
+    this.camera.far = size * 8;
+    this.camera.updateProjectionMatrix();
+    this.controls.target.set(0, 0, 0);
+    this.controls.update();
+
+    const reach = size * 2;
+    this._key.position.set(reach, reach * 1.35, reach * 0.75);
+    this._fill.position.set(-reach * 0.9, -reach * 0.5, -reach);
+  }
+
+  /** Switch colour ramp. The next sync rebuilds the per-state colours. */
+  setPalette(name) {
+    this.palette = findPalette(name);
+    this._rampKey = null; // force a rebuild
+    if (this._bounds) {
+      this._bounds.material.color.setHex(this.palette.edge, THREE.SRGBColorSpace);
+    }
+  }
+
+  /**
+   * Per-state colours, sampled from the current palette's stops. State 1 (about to
+   * die) takes the darkest stop, max state (just born) the lightest.
+   */
+  _buildRamp(states) {
+    const key = `${this.palette.name}:${states}`;
+    if (this._rampKey === key) return;
+
+    const { stops } = this.palette;
+    const maxState = states - 1;
+    const ramp = new Float32Array((states + 1) * 3);
+    const low = new THREE.Color();
+    const high = new THREE.Color();
+
+    for (let state = 1; state <= maxState; state++) {
+      const t = maxState > 1 ? (state - 1) / (maxState - 1) : 1;
+      const position = t * (stops.length - 1);
+      const index = Math.min(Math.floor(position), stops.length - 2);
+      low.setHex(stops[index], THREE.SRGBColorSpace);
+      high.setHex(stops[index + 1], THREE.SRGBColorSpace);
+      low.lerp(high, position - index);
+
+      ramp[state * 3] = low.r;
+      ramp[state * 3 + 1] = low.g;
+      ramp[state * 3 + 2] = low.b;
+    }
+
+    this._ramp = ramp;
+    this._rampKey = key;
+  }
+
+  /**
+   * Grow the instance buffers if needed. Capacity tracks the actual number of live
+   * cells rather than the whole grid, so memory follows what is really on screen.
+   */
+  _ensureCapacity(needed) {
+    if (this._mesh && needed <= this._capacity) return;
+
+    // Round up generously so a growing pattern does not reallocate every frame.
+    const capacity = Math.max(4096, Math.ceil((needed * 1.4) / 4096) * 4096);
+
+    if (this._mesh) {
+      this.scene.remove(this._mesh);
+      this._mesh.dispose();
+    }
+
+    const mesh = new THREE.InstancedMesh(this._geometry, this._material, capacity);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.instanceColor = new THREE.InstancedBufferAttribute(
+      new Float32Array(capacity * 3),
+      3,
+    );
+    mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    // The bounding sphere comes from the unit-cube geometry, not the instances, so
+    // built-in culling would drop the whole mesh at the wrong moments.
+    mesh.frustumCulled = false;
+    mesh.count = 0;
+
+    this.scene.add(mesh);
+    this._mesh = mesh;
+    this._capacity = capacity;
+  }
+
+  /** Copy the automaton's live cells into the instance buffers. */
+  sync(automaton) {
+    const { size } = automaton;
+    const states = automaton.rule.states;
+    const maxState = states - 1;
+    this._buildRamp(states);
+
+    // Collect first: capacity has to be known before writing instance data, and
+    // this keeps the walk over the grid down to a single pass.
+    const cells = size ** 3;
+    if (!this._scratch || this._scratch.length < cells * 4) {
+      this._scratch = new Int32Array(cells * 4);
+    }
+    const scratch = this._scratch;
+    let written = 0;
+    automaton.forEachAlive((x, y, z, state) => {
+      scratch[written++] = x;
+      scratch[written++] = y;
+      scratch[written++] = z;
+      scratch[written++] = state;
+    });
+
+    const count = written / 4;
+    this._ensureCapacity(count);
+
+    const matrices = this._mesh.instanceMatrix.array;
+    const colours = this._mesh.instanceColor.array;
+    const ramp = this._ramp;
+    const offset = (size - 1) / 2; // centre the grid on the origin
+
+    for (let i = 0; i < count; i++) {
+      const base = i * 4;
+      const state = scratch[base + 3];
+      const t = maxState > 1 ? (state - 1) / (maxState - 1) : 1;
+      const scale = MIN_SCALE + (MAX_SCALE - MIN_SCALE) * t;
+
+      // Column-major scale+translate matrix. The off-diagonal slots are always zero
+      // and are never written with anything else, so only these seven need touching.
+      const m = i * 16;
+      matrices[m] = scale;
+      matrices[m + 5] = scale;
+      matrices[m + 10] = scale;
+      matrices[m + 12] = scratch[base] - offset;
+      matrices[m + 13] = scratch[base + 1] - offset;
+      matrices[m + 14] = scratch[base + 2] - offset;
+      matrices[m + 15] = 1;
+
+      const c = i * 3;
+      const p = state * 3;
+      colours[c] = ramp[p];
+      colours[c + 1] = ramp[p + 1];
+      colours[c + 2] = ramp[p + 2];
+    }
+
+    this._mesh.count = count;
+    this._mesh.instanceMatrix.needsUpdate = true;
+    this._mesh.instanceColor.needsUpdate = true;
+    this.drawn = count;
+  }
+
+  render() {
+    this.controls.update();
+    this.renderer.render(this.scene, this.camera);
+  }
+}
+
+
+
+// ═══ src/ui.js ═══════════════════════════════════════════════════
+
+/**
+ * Control panel wiring. Owns no simulation state of its own: the applied rule is the
+ * single source of truth, and every control is refreshed from it after each change.
+ *
+ * The rule text field is the real editor. The states slider and neighbourhood select
+ * are shortcuts that rewrite one field of the rule string and re-apply it.
+ */
+
+
+const $ = (id) => document.getElementById(id);
+
+class Controls {
+  /**
+   * @param {object} handlers
+   * @param {(rule: object) => void} handlers.onRule
+   * @param {(size: number) => void} handlers.onSize
+   * @param {(playing: boolean) => void} handlers.onPlaying
+   * @param {() => void} handlers.onStep
+   * @param {() => void} handlers.onReseed
+   * @param {() => void} handlers.onClear
+   */
+  /**
+   * @param {object} handlers
+   * @param {object} [options]
+   * @param {Element | Document} [options.keyScope] Element that must hold focus for the
+   *   keyboard shortcuts to fire. Defaults to the whole document, which is right when the
+   *   app owns the page. When it is embedded in an article, pass the viewer container —
+   *   otherwise Space steals scrolling from someone who is just reading.
+   */
+  constructor(handlers, options = {}) {
+    this.handlers = handlers;
+    this.keyScope = options.keyScope ?? document;
+    this.playing = false;
+
+    this.el = {
+      preset: $('preset'),
+      palette: $('palette'),
+      palettePreview: $('palette-preview'),
+      rule: $('rule'),
+      apply: $('apply'),
+      ruleError: $('rule-error'),
+      states: $('states'),
+      statesValue: $('states-value'),
+      neighbourhood: $('neighbourhood'),
+      size: $('size'),
+      speed: $('speed'),
+      speedValue: $('speed-value'),
+      seedSize: $('seed-size'),
+      seedSizeValue: $('seed-size-value'),
+      density: $('density'),
+      densityValue: $('density-value'),
+      play: $('play'),
+      step: $('step'),
+      reseed: $('reseed'),
+      clear: $('clear'),
+      generation: $('stat-generation'),
+      population: $('stat-population'),
+      stepTime: $('stat-steptime'),
+      fps: $('stat-fps'),
+    };
+
+    for (const [name, node] of Object.entries(this.el)) {
+      if (!node) throw new Error(`control panel is missing element "${name}"`);
+    }
+
+    this._fillPresets();
+    this._fillPalettes();
+    this._bind();
+    this.setPalette(DEFAULT_PALETTE);
+  }
+
+  _fillPresets() {
+    for (const [index, preset] of PRESETS.entries()) {
+      const option = document.createElement('option');
+      option.value = String(index);
+      option.textContent = preset.name;
+      this.el.preset.append(option);
+    }
+  }
+
+  _fillPalettes() {
+    for (const palette of PALETTES) {
+      const option = document.createElement('option');
+      option.value = palette.name;
+      option.textContent = palette.name;
+      this.el.palette.append(option);
+    }
+  }
+
+  /** Show the chosen ramp as a gradient strip, so the choice is visible before use. */
+  _drawPalettePreview(name) {
+    const palette = PALETTES.find((p) => p.name === name) ?? PALETTES[0];
+    const stops = palette.stops
+      .map((hex, i) => {
+        const css = `#${hex.toString(16).padStart(6, '0')}`;
+        return `${css} ${((i / (palette.stops.length - 1)) * 100).toFixed(1)}%`;
+      })
+      .join(', ');
+    this.el.palettePreview.style.background = `linear-gradient(90deg, ${stops})`;
+  }
+
+  _bind() {
+    this.el.preset.addEventListener('change', () => {
+      const preset = PRESETS[Number(this.el.preset.value)];
+      this._applyText(preset.rule, true);
+    });
+
+    this.el.palette.addEventListener('change', () => {
+      this.setPalette(this.el.palette.value);
+    });
+
+    this.el.apply.addEventListener('click', () => this._applyText(this.el.rule.value));
+    this.el.rule.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') this._applyText(this.el.rule.value);
+    });
+
+    this.el.states.addEventListener('input', () => {
+      this.el.statesValue.textContent = this.el.states.value;
+      this._replaceField(2, this.el.states.value);
+    });
+
+    this.el.neighbourhood.addEventListener('change', () => {
+      this._changeNeighbourhood(this.el.neighbourhood.value);
+    });
+
+    this.el.size.addEventListener('change', () => {
+      const size = Number(this.el.size.value);
+      // Keep the seed cube meaningful relative to the new grid.
+      this.el.seedSize.max = String(size);
+      if (Number(this.el.seedSize.value) > size) {
+        this.el.seedSize.value = String(size);
+        this.el.seedSizeValue.textContent = this.el.seedSize.value;
+      }
+      this.handlers.onSize(size);
+    });
+
+    this.el.speed.addEventListener('input', () => {
+      this.el.speedValue.textContent = `${this.el.speed.value}/s`;
+    });
+    this.el.seedSize.addEventListener('input', () => {
+      this.el.seedSizeValue.textContent = this.el.seedSize.value;
+    });
+    this.el.density.addEventListener('input', () => {
+      this.el.densityValue.textContent = Number(this.el.density.value).toFixed(2);
+    });
+
+    this.el.play.addEventListener('click', () => this.setPlaying(!this.playing));
+    this.el.step.addEventListener('click', () => this.handlers.onStep());
+    this.el.reseed.addEventListener('click', () => this.handlers.onReseed());
+    this.el.clear.addEventListener('click', () => this.handlers.onClear());
+
+    document.addEventListener('keydown', (event) => {
+      // Never steal keys while the rule field is being edited.
+      if (event.target instanceof HTMLInputElement && event.target.type === 'text') return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      // When scoped to an element, only act while focus is inside it.
+      if (this.keyScope !== document && !this.keyScope.contains(document.activeElement)) return;
+
+      switch (event.key.toLowerCase()) {
+        case ' ':
+          event.preventDefault();
+          this.setPlaying(!this.playing);
+          break;
+        case 's':
+          this.handlers.onStep();
+          break;
+        case 'r':
+          this.handlers.onReseed();
+          break;
+        case 'c':
+          this.handlers.onClear();
+          break;
+        case 'p': {
+          const index = PALETTES.findIndex((p) => p.name === this.el.palette.value);
+          this.setPalette(PALETTES[(index + 1) % PALETTES.length].name);
+          break;
+        }
+      }
+    });
+  }
+
+  /** Parse and apply a rule string, reporting any error inline instead of throwing. */
+  _applyText(text, fromPreset = false) {
+    let rule;
+    try {
+      rule = parseRule(text);
+    } catch (error) {
+      this.showRuleError(error.message);
+      return;
+    }
+    this.showRuleError(null);
+    this.handlers.onRule(rule, fromPreset);
+  }
+
+  /** Rewrite one slash-separated field of the current rule string and re-apply. */
+  _replaceField(index, value) {
+    const fields = this.el.rule.value.split('/');
+    if (fields.length !== 4) {
+      this.showRuleError('fix the rule string first');
+      return;
+    }
+    fields[index] = value;
+    this._applyText(fields.join('/'));
+  }
+
+  /**
+   * Switching to von Neumann leaves counts above 6 unrepresentable, so drop them
+   * rather than failing to parse. If that empties a list, say so and stay put.
+   */
+  _changeNeighbourhood(neighbourhood) {
+    let rule;
+    try {
+      rule = parseRule(this.el.rule.value);
+    } catch (error) {
+      this.showRuleError(error.message);
+      return;
+    }
+
+    const max = NEIGHBOUR_COUNT[neighbourhood];
+    const survive = rule.survive.filter((c) => c <= max);
+    const born = rule.born.filter((c) => c <= max);
+
+    if (survive.length === 0 || born.length === 0) {
+      this.showRuleError(
+        `this rule has no counts at or below ${max}, so it cannot use ${neighbourhood === 'N' ? 'von Neumann' : 'Moore'}`,
+      );
+      this.el.neighbourhood.value = rule.neighbourhood;
+      return;
+    }
+
+    const dropped =
+      survive.length !== rule.survive.length || born.length !== rule.born.length;
+    this._applyText(formatRule({ ...rule, survive, born, neighbourhood }));
+    if (dropped) {
+      this.showRuleError(`counts above ${max} were dropped to fit the neighbourhood`, true);
+    }
+  }
+
+  /** @param {string | null} message  @param {boolean} [notice] style as info, not failure */
+  showRuleError(message, notice = false) {
+    this.el.ruleError.textContent = message ?? '';
+    this.el.ruleError.hidden = !message;
+    this.el.ruleError.classList.toggle('notice', notice);
+    this.el.rule.classList.toggle('invalid', Boolean(message) && !notice);
+  }
+
+  /** Refresh every control that mirrors the rule. Called after a rule is accepted. */
+  syncRule(rule) {
+    this.el.rule.value = formatRule(rule);
+    this.el.states.value = String(Math.min(rule.states, Number(this.el.states.max)));
+    this.el.statesValue.textContent = String(rule.states);
+    this.el.neighbourhood.value = rule.neighbourhood;
+
+    const text = formatRule(rule);
+    const match = PRESETS.findIndex((preset) => formatRule(parseRule(preset.rule)) === text);
+    this.el.preset.value = match === -1 ? '' : String(match);
+  }
+
+  setPlaying(playing) {
+    this.playing = playing;
+    this.el.play.textContent = playing ? 'Pause' : 'Play';
+    this.el.play.classList.toggle('active', playing);
+    this.handlers.onPlaying(playing);
+  }
+
+  get stepsPerSecond() {
+    return Number(this.el.speed.value);
+  }
+
+  get seedSize() {
+    return Number(this.el.seedSize.value);
+  }
+
+  get density() {
+    return Number(this.el.density.value);
+  }
+
+  get size() {
+    return Number(this.el.size.value);
+  }
+
+  /** Select a palette, update the preview strip and notify. */
+  setPalette(name) {
+    this.el.palette.value = name;
+    this._drawPalettePreview(name);
+    this.handlers.onPalette(name);
+  }
+
+  /** Apply a preset's seeding regime to the sliders. */
+  setSeed(side, density) {
+    const clamped = Math.min(side, Number(this.el.seedSize.max));
+    this.el.seedSize.value = String(clamped);
+    this.el.seedSizeValue.textContent = String(clamped);
+    this.el.density.value = String(density);
+    this.el.densityValue.textContent = Number(density).toFixed(2);
+  }
+
+  setStatus({ generation, population, stepMs, fps }) {
+    this.el.generation.textContent = generation.toLocaleString();
+    this.el.population.textContent = population.toLocaleString();
+    this.el.stepTime.textContent = stepMs === null ? '—' : `${stepMs.toFixed(1)} ms`;
+    this.el.fps.textContent = fps === null ? '—' : `${Math.round(fps)} fps`;
+  }
+}
+
+
+
+// ═══ src/main.js ═════════════════════════════════════════════════
+
+/**
+ * Wires the simulation, the view and the control panel together, and owns the loop.
+ */
+
+
+const DEFAULT_PRESET = 'Pyroclastic';
+
+const startingPreset = PRESETS.find((p) => p.name === DEFAULT_PRESET) ?? PRESETS[0];
+
+const renderer = new Renderer(document.getElementById('view'));
+const automaton = new Automaton(64, parseRule(startingPreset.rule));
+
+/** Rolling average of step cost, so the readout is not pure noise. */
+let stepMs = null;
+let frameMs = null;
+let playing = false;
+let stepDebt = 0;
+let lastFrame = performance.now();
+let lastStatus = 0;
+
+function reseed() {
+  automaton.seed(controls.seedSize, controls.density);
+}
+
+/** Apply a preset's suggested seeding, if it has one, then reseed. */
+function applySeedHint(rule) {
+  const preset = findPreset(rule);
+  if (preset?.seed) {
+    controls.setSeed(preset.seed.side, preset.seed.density);
+  }
+}
+
+// Standalone, the app owns the whole page, so shortcuts are global. Embedded in an
+// article there is a #viewer container, and scoping to it keeps Space as page-scroll
+// for anyone who is just reading.
+const keyScope = document.getElementById('viewer') ?? document;
+
+const controls = new Controls({
+  /**
+   * Presets bring their own seeding regime, so selecting one restarts the pattern.
+   * Hand edits keep the current pattern, which is what makes sweeping the states
+   * slider on a living structure worth doing.
+   */
+  onRule(rule, fromPreset) {
+    automaton.setRule(rule);
+    controls.syncRule(rule);
+    if (fromPreset) applySeedHint(rule);
+    if (fromPreset || automaton.population === 0) reseed();
+  },
+
+  onSize(size) {
+    automaton.resize(size); // clears the grid
+    renderer.fitTo(size);
+    reseed();
+  },
+
+  onPalette(name) {
+    renderer.setPalette(name);
+  },
+
+  onPlaying(next) {
+    playing = next;
+    stepDebt = 0;
+  },
+
+  onStep() {
+    controls.setPlaying(false);
+    advance();
+  },
+
+  onReseed: reseed,
+
+  onClear() {
+    controls.setPlaying(false);
+    automaton.clear();
+  },
+}, { keyScope });
+
+function advance() {
+  const t0 = performance.now();
+  automaton.step();
+  const elapsed = performance.now() - t0;
+  stepMs = stepMs === null ? elapsed : stepMs * 0.85 + elapsed * 0.15;
+}
+
+function frame(now) {
+  const delta = now - lastFrame;
+  lastFrame = now;
+  frameMs = frameMs === null ? delta : frameMs * 0.9 + delta * 0.1;
+
+  if (playing) {
+    const interval = 1000 / controls.stepsPerSecond;
+    stepDebt += delta;
+    // Cap the catch-up work so a slow step never starves rendering and input.
+    const budgetEnd = performance.now() + 12;
+    let taken = 0;
+    while (stepDebt >= interval && taken < 8) {
+      advance();
+      stepDebt -= interval;
+      taken++;
+      if (performance.now() > budgetEnd) break;
+    }
+    if (stepDebt > interval * 8) stepDebt = 0; // do not accumulate an unpayable debt
+  }
+
+  renderer.sync(automaton);
+  renderer.render();
+
+  if (now - lastStatus > 200) {
+    lastStatus = now;
+    controls.setStatus({
+      generation: automaton.generation,
+      population: renderer.drawn,
+      stepMs,
+      fps: frameMs ? 1000 / frameMs : null,
+    });
+  }
+
+  requestAnimationFrame(frame);
+}
+
+const observer = new ResizeObserver(() => renderer.resizeToDisplay());
+observer.observe(renderer.renderer.domElement);
+
+// Handle for poking at the simulation from the browser console.
+window.life3d = { automaton, renderer, controls, advance, reseed };
+
+controls.syncRule(automaton.rule);
+applySeedHint(automaton.rule);
+renderer.fitTo(automaton.size);
+reseed();
+requestAnimationFrame(frame);
+
+
+
+// ── published-page extras ───────────────────────────────────────────────
+const viewer = document.getElementById('viewer');
+const fullscreenButton = document.getElementById('fullscreen');
+const legendRamp = document.getElementById('legend-ramp');
+
+// Shortcuts are scoped to the viewer, so dragging the scene must also give it focus —
+// otherwise Space does nothing after the obvious first interaction.
+viewer.addEventListener('pointerdown', () => viewer.focus({ preventScroll: true }));
+
+fullscreenButton.addEventListener('click', () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else viewer.requestFullscreen?.();
+});
+
+document.addEventListener('fullscreenchange', () => {
+  const active = document.fullscreenElement === viewer;
+  fullscreenButton.textContent = active ? 'Exit fullscreen' : 'Fullscreen';
+  // The container changes size, and only a layout read afterwards gets it right.
+  requestAnimationFrame(() => renderer.resizeToDisplay());
+});
+
+// Mirror the panel's palette strip into the legend beside the canvas.
+function paintLegend() {
+  legendRamp.style.background = controls.el.palettePreview.style.background;
+}
+controls.el.palette.addEventListener('change', paintLegend);
+document.addEventListener('keydown', (event) => {
+  if (event.key.toLowerCase() === 'p') requestAnimationFrame(paintLegend);
+});
+paintLegend();
+
+// Don't burn CPU simulating a page nobody is looking at.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && controls.playing) controls.setPlaying(false);
+});
+</script>
+</body>
+</html>
