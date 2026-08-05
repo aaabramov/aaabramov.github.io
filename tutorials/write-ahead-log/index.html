@@ -195,8 +195,6 @@
     letter-spacing: 0.08em;
     white-space: nowrap;
   }
-  /* Long status text must wrap rather than push the page sideways on mobile. */
-  .ctl-label.wrap { white-space: normal; }
 
   /* ── Code blocks ─────────────────────────────────────────── */
   pre {
@@ -467,11 +465,28 @@
     padding: 12px;
     text-align: center;
     font-size: 12px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s, transform 0.1s;
   }
+  .stage:hover { border-color: var(--fg-dimmer); transform: translateY(-1px); }
+  .stage:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .stage .sname { font-family: var(--mono); color: var(--fg); font-size: 12.5px; }
   .stage .swhat { color: var(--fg-dimmer); font-size: 11px; margin-top: 3px; }
+  .stage .sbolt {
+    display: block;
+    font-size: 11px;
+    margin-top: 6px;
+    height: 14px;
+    color: var(--fg-dimmer);
+    opacity: 0;
+    font-family: var(--mono);
+  }
   .stage.lost { border-color: var(--bad); background: rgba(247,118,142,0.09); }
   .stage.kept { border-color: var(--good); background: rgba(158,206,106,0.09); }
+  .stage.cut { border-width: 2px; padding: 11px; }
+  .stage.cut .sbolt { opacity: 1; }
+  .stage.cut.lost .sbolt { color: var(--bad); }
+  .stage.cut.kept .sbolt { color: var(--good); }
   .stage-arrow { display: flex; align-items: center; color: var(--fg-dimmer); padding: 0 8px; }
   @media (max-width: 720px) { .stage-arrow { display: none; } }
 
@@ -743,8 +758,8 @@
         <button id="sv-play">▶ Play</button>
         <button class="ghost" id="sv-prev">‹ Step</button>
         <button class="ghost" id="sv-next">Step ›</button>
-        <div class="grow"><input type="range" id="sv-slider" min="0" max="24" step="1" value="0" /></div>
-        <span class="ctl-label" id="sv-tick" style="color:var(--fg)">0 / 24</span>
+        <div class="grow"><input type="range" id="sv-slider" min="0" max="25" step="1" value="0" /></div>
+        <span class="ctl-label" id="sv-tick" style="color:var(--fg)">0 / 25</span>
       </div>
 
       <div class="panes">
@@ -776,11 +791,13 @@
     </p>
 
     <div class="callout">
-      <strong>That checkpoint step at tick 12.</strong> A log that only grows is a log that
-      eventually fills the disk. Periodically the database flushes memory into the data file and
-      records how far it got — then everything in the log before that point is dead weight and can
-      be discarded. Checkpoint often and recovery is fast but you do more disk work; checkpoint
-      rarely and it's the reverse. That's the whole tradeoff.
+      <strong>Those checkpoint steps, at ticks 12 and 25.</strong> A log that only grows is a log
+      that eventually fills the disk. Periodically the database flushes memory into the data file
+      and records how far it got — then everything in the log before that point is dead weight and
+      can be discarded. Run to the end and you can see the payoff: the data file finally holds the
+      whole state, so recovery from there would have nothing left to replay. Checkpoint often and
+      recovery is fast but you do more disk work; checkpoint rarely and it's the reverse. That's
+      the whole tradeoff.
     </div>
   </div>
 </section>
@@ -801,8 +818,8 @@
         <button class="danger" id="cr-crash">⚡ Pull the plug</button>
         <button class="ghost" id="cr-random">🎲 Random moment</button>
         <button class="ghost" id="cr-reset" disabled>↺ Reset</button>
-        <div class="grow"><input type="range" id="cr-slider" min="1" max="24" step="1" value="14" /></div>
-        <span class="ctl-label" id="cr-tick" style="color:var(--fg)">tick 14 / 24</span>
+        <div class="grow"><input type="range" id="cr-slider" min="1" max="25" step="1" value="14" /></div>
+        <span class="ctl-label" id="cr-tick" style="color:var(--fg)">tick 14 / 25</span>
       </div>
 
       <div class="crash-grid" id="cr-grid">
@@ -868,34 +885,34 @@
       When you call <code>write()</code>, the kernel copies your bytes into its page cache and
       returns immediately. That's a deliberate performance decision — it's why writes feel fast.
       But the data is still in volatile RAM. Only <code>fsync()</code> asks the drive to actually
-      persist it and waits for the answer. Click a stage to cut the power there:
+      persist it and waits for the answer. Click any stage below to cut the power at that point:
     </p>
 
     <div class="card">
       <div class="stages" id="fs-stages">
-        <div class="stage" data-stage="0">
+        <div class="stage" data-stage="0" role="button" tabindex="0" aria-label="Cut power while the record is still in your process buffer">
           <div class="sname">your code</div>
           <div class="swhat">record in a buffer</div>
+          <span class="sbolt">⚡ power cut</span>
         </div>
         <div class="stage-arrow">→</div>
-        <div class="stage" data-stage="1">
+        <div class="stage" data-stage="1" role="button" tabindex="0" aria-label="Cut power after write() returned">
           <div class="sname">OS page cache</div>
           <div class="swhat">write() returned "ok"</div>
+          <span class="sbolt">⚡ power cut</span>
         </div>
         <div class="stage-arrow">→</div>
-        <div class="stage" data-stage="2">
+        <div class="stage" data-stage="2" role="button" tabindex="0" aria-label="Cut power while fsync() is still in progress">
           <div class="sname">drive cache</div>
           <div class="swhat">fsync() in progress</div>
+          <span class="sbolt">⚡ power cut</span>
         </div>
         <div class="stage-arrow">→</div>
-        <div class="stage" data-stage="3">
+        <div class="stage" data-stage="3" role="button" tabindex="0" aria-label="Cut power after fsync() returned">
           <div class="sname">persistent media</div>
           <div class="swhat">fsync() returned</div>
+          <span class="sbolt">⚡ power cut</span>
         </div>
-      </div>
-      <div class="controls" style="margin:16px 0 0">
-        <button class="danger" id="fs-crash">⚡ Cut power at the selected stage</button>
-        <span class="ctl-label wrap" id="fs-hint">stage 2 selected — click a box to move it</span>
       </div>
       <div class="step-caption" id="fs-caption"></div>
     </div>
@@ -1103,7 +1120,7 @@ const OPS = [
   { t: 'SET', k: 'user:3', v: 999 },
   { t: 'SET', k: 'user:1', v: 410 },
 ];
-const CHECKPOINT_AFTER = 2;   // checkpoint tick lands right after op index 2 is acked
+const CHECKPOINT_AFTER = [2, 5];   // checkpoint ticks land right after these ops are acked
 const WRITEBACK_EVERY = 9;    // in "no fsync" mode, the OS lazily flushes on these ticks
 
 const PHASES = {
@@ -1138,7 +1155,7 @@ function buildSteps(mode) {
     for (let p = 0; p < 4; p++) {
       steps.push({ mode, op: o, i, phase: p, label: PHASES[mode][p], why: WHY[mode][p] });
     }
-    if (i === CHECKPOINT_AFTER) {
+    if (CHECKPOINT_AFTER.includes(i)) {
       steps.push({
         mode, op: null, i, phase: 4,
         label: 'checkpoint',
@@ -1529,13 +1546,10 @@ function renderWAL(st, opts = {}) {
 (() => {
   const wrap = document.getElementById('fs-stages');
   const capEl = document.getElementById('fs-caption');
-  const hint = document.getElementById('fs-hint');
-  const btn = document.getElementById('fs-crash');
   if (!wrap) return;
 
   const stages = [...wrap.querySelectorAll('.stage')];
-  let selected = 2;
-  let fired = false;
+  let selected = null;   // null until the reader cuts power somewhere
 
   const OUTCOMES = [
     { survives: false, title: 'nothing written', why: 'The record only ever existed in your process\'s memory. Expected — the client was never told it committed.' },
@@ -1546,24 +1560,34 @@ function renderWAL(st, opts = {}) {
 
   function render() {
     stages.forEach((s, i) => {
-      s.classList.remove('lost', 'kept');
-      if (!fired) return;
+      s.classList.remove('lost', 'kept', 'cut');
+      if (selected === null) return;
       if (i <= selected) s.classList.add(OUTCOMES[selected].survives ? 'kept' : 'lost');
+      if (i === selected) s.classList.add('cut');
     });
-    hint.textContent = `stage ${selected + 1} selected — click a box to move it`;
-    if (!fired) { capEl.innerHTML = '<span class="tick">ready</span>pick a stage, then cut the power<span class="why">Only one of these four points is safe to acknowledge a client from.</span>'; return; }
+
+    if (selected === null) {
+      capEl.innerHTML = '<span class="tick">ready</span>click a stage to cut the power there' +
+        '<span class="why">Only one of these four points is safe to acknowledge a client from.</span>';
+      return;
+    }
     const o = OUTCOMES[selected];
-    capEl.innerHTML = `<span class="tick">crash at stage ${selected + 1}</span>` +
+    capEl.innerHTML = `<span class="tick">power cut at stage ${selected + 1}</span>` +
       `<span style="color:var(--${o.survives ? 'good' : 'bad'})">${o.title}</span>` +
       `<span class="why">${o.why}</span>`;
   }
 
-  stages.forEach((s, i) => s.addEventListener('click', () => {
-    selected = i; fired = false; render();
-  }));
-  btn.addEventListener('click', () => {
-    fired = true; render();
-    fx(stages.slice(0, selected + 1), { scale: [1, 0.96, 1], duration: 320, delay: stagger(40) });
+  function cutAt(i) {
+    selected = i;
+    render();
+    fx(stages.slice(0, i + 1), { scale: [1, 0.96, 1], duration: 320, delay: stagger(40) });
+  }
+
+  stages.forEach((s, i) => {
+    s.addEventListener('click', () => cutAt(i));
+    s.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); cutAt(i); }
+    });
   });
   render();
 })();
