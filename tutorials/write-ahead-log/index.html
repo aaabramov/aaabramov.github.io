@@ -1,0 +1,1792 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>How databases survive a power cut — Write-Ahead Logs</title>
+<style>
+  :root {
+    --bg: #0b0e14;
+    --bg-2: #141925;
+    --bg-3: #1c2232;
+    --fg: #e6edf3;
+    --fg-dim: #9aa4b2;
+    --fg-dimmer: #5f6a7d;
+    --accent: #7aa2f7;
+    --accent-2: #bb9af7;
+    --accent-3: #7dcfff;
+    --good: #9ece6a;
+    --warn: #e0af68;
+    --bad: #f7768e;
+    --border: #2a3142;
+    --radius: 12px;
+    --mono: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.6;
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .container { max-width: 980px; margin: 0 auto; padding: 0 24px; }
+
+  /* Hero */
+  header {
+    padding: 80px 0 60px;
+    background: radial-gradient(ellipse at top, rgba(122,162,247,0.12), transparent 60%);
+    border-bottom: 1px solid var(--border);
+  }
+  h1 {
+    font-size: clamp(32px, 5vw, 52px);
+    line-height: 1.15;
+    margin: 0 0 16px;
+    letter-spacing: -0.02em;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 50%, var(--accent-3) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 700;
+  }
+  .tagline {
+    font-size: clamp(17px, 2vw, 20px);
+    color: var(--fg-dim);
+    max-width: 660px;
+    margin: 0 0 28px;
+  }
+  .hero-meta {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: var(--fg-dimmer);
+    font-family: var(--mono);
+  }
+  .hero-meta span::before { content: "◆ "; color: var(--accent); }
+
+  /* Sections */
+  section {
+    padding: 64px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  section:last-of-type { border-bottom: none; }
+  section h2 {
+    font-size: clamp(24px, 3.5vw, 32px);
+    margin: 0 0 8px;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+  }
+  section .eyebrow {
+    font-family: var(--mono);
+    color: var(--accent);
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  section .lede {
+    color: var(--fg-dim);
+    max-width: 720px;
+    margin: 0 0 32px;
+    font-size: 17px;
+  }
+  p { margin: 0 0 16px; max-width: 760px; }
+  ul, ol { max-width: 760px; color: var(--fg-dim); }
+  li { margin-bottom: 8px; }
+  li strong { color: var(--fg); }
+  p code, li code, td code {
+    font-family: var(--mono);
+    background: var(--bg-3);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.88em;
+    color: var(--accent-3);
+  }
+  h3 { font-size: 18px; margin: 32px 0 10px; }
+
+  .callout {
+    padding: 16px 20px;
+    background: var(--bg-2);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    margin: 20px 0;
+    color: var(--fg-dim);
+    max-width: 760px;
+  }
+  .callout strong { color: var(--fg); }
+  .callout.warn { border-left-color: var(--warn); }
+
+  .card {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-top: 20px;
+  }
+
+  button {
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: transform 0.1s, background 0.15s, opacity 0.15s;
+  }
+  button:hover:not(:disabled) { background: var(--accent-2); transform: translateY(-1px); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.ghost {
+    background: transparent;
+    color: var(--fg-dim);
+    border: 1px solid var(--border);
+  }
+  button.ghost:hover:not(:disabled) { background: var(--bg-3); color: var(--fg); }
+  button.danger { background: var(--bad); color: #24121a; }
+  button.danger:hover:not(:disabled) { background: #ff8fa3; }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--bg-3);
+    outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: 2px solid var(--bg);
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: 2px solid var(--bg);
+  }
+
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+  }
+  .controls .grow { flex: 1; min-width: 180px; }
+  .ctl-label {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--fg-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+  }
+  /* Long status text must wrap rather than push the page sideways on mobile. */
+  .ctl-label.wrap { white-space: normal; }
+
+  /* ── Code blocks ─────────────────────────────────────────── */
+  pre {
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px 20px;
+    overflow-x: auto;
+    margin: 18px 0;
+    font-size: 13.5px;
+    line-height: 1.65;
+    max-width: 760px;
+  }
+  pre code { font-family: var(--mono); color: var(--fg); background: none; padding: 0; }
+  /* Prism tokens, themed to this palette. Page stays readable if Prism never loads. */
+  .token.comment { color: var(--fg-dimmer); font-style: italic; }
+  .token.keyword, .token.boolean { color: var(--accent-2); }
+  .token.string, .token.template-string { color: var(--good); }
+  .token.number { color: var(--warn); }
+  .token.function { color: var(--accent-3); }
+  .token.operator, .token.punctuation { color: var(--fg-dim); }
+  .token.class-name { color: var(--accent); }
+  pre .hl {
+    display: inline-block;
+    color: var(--warn);
+    font-style: italic;
+  }
+
+  /* ── Panes (WAL / memory / data file) ────────────────────── */
+  .panes {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr 1fr;
+    gap: 14px;
+  }
+  @media (max-width: 820px) { .panes { grid-template-columns: 1fr; } }
+  .pane {
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    min-height: 190px;
+  }
+  .pane-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--fg-dim);
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .pane-sub {
+    font-size: 11px;
+    color: var(--fg-dimmer);
+    margin-bottom: 12px;
+    font-family: var(--mono);
+  }
+  .pane-sub.volatile { color: var(--bad); }
+  .pane-sub.durable { color: var(--good); }
+  .pane-empty { color: var(--fg-dimmer); font-family: var(--mono); font-size: 12px; font-style: italic; }
+
+  .wal-rec {
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 5px 9px;
+    border-radius: 5px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--fg-dimmer);
+    margin-bottom: 5px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .wal-rec .lsn { color: var(--fg-dimmer); }
+  .wal-rec .body { color: var(--fg); flex: 1; }
+  .wal-rec .flag {
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .wal-rec.durable { border-left-color: var(--good); }
+  .wal-rec.durable .flag { color: var(--good); }
+  .wal-rec.pending { border-left-color: var(--warn); }
+  .wal-rec.pending .flag { color: var(--warn); }
+  .wal-rec.new { background: var(--bg); border-color: var(--accent); }
+  .wal-rec.replayed { border-left-color: var(--accent-3); background: rgba(125,207,255,0.07); }
+  .wal-rec.discarded { opacity: 0.35; text-decoration: line-through; }
+
+  .kv-row {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 4px 0;
+    border-bottom: 1px dashed var(--border);
+  }
+  .kv-row:last-child { border-bottom: none; }
+  .kv-row .k { color: var(--fg-dim); }
+  .kv-row .v { color: var(--accent-3); }
+  .kv-row .v.torn { color: var(--bad); font-weight: 600; }
+  .kv-row .v.missing { color: var(--bad); }
+  .kv-row.changed .v { color: var(--warn); }
+
+  .step-caption {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--fg);
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-top: 16px;
+  }
+  .step-caption .tick { color: var(--fg-dimmer); margin-right: 10px; }
+  .step-caption .why { color: var(--fg-dim); display: block; margin-top: 4px; font-family: var(--sans); font-size: 13px; }
+
+  /* ── Crash simulator ─────────────────────────────────────── */
+  .crash-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    margin-top: 8px;
+  }
+  @media (max-width: 900px) { .crash-grid { grid-template-columns: 1fr; } }
+  .col {
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    position: relative;
+    overflow: hidden;
+  }
+  .col h4 {
+    margin: 0 0 2px;
+    font-size: 14px;
+    font-family: var(--mono);
+  }
+  .col .col-sub {
+    font-size: 11.5px;
+    color: var(--fg-dimmer);
+    margin-bottom: 12px;
+    min-height: 30px;
+  }
+  .col .mini-title {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--fg-dimmer);
+    margin: 12px 0 5px;
+  }
+  .col-none h4 { color: var(--bad); }
+  .col-nofsync h4 { color: var(--warn); }
+  .col-fsync h4 { color: var(--good); }
+
+  .verdict {
+    margin-top: 14px;
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    border: 1px solid;
+  }
+  .verdict .vtitle {
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 3px;
+  }
+  .verdict.good { border-color: rgba(158,206,106,0.4); background: rgba(158,206,106,0.09); color: var(--fg-dim); }
+  .verdict.good .vtitle { color: var(--good); }
+  .verdict.warn { border-color: rgba(224,175,104,0.4); background: rgba(224,175,104,0.09); color: var(--fg-dim); }
+  .verdict.warn .vtitle { color: var(--warn); }
+  .verdict.bad  { border-color: rgba(247,118,142,0.4); background: rgba(247,118,142,0.09); color: var(--fg-dim); }
+  .verdict.bad .vtitle { color: var(--bad); }
+
+  .crashed-badge {
+    position: absolute;
+    inset: 0;
+    background: rgba(247,118,142,0.06);
+    pointer-events: none;
+    opacity: 0;
+  }
+  .col.is-crashed .crashed-badge { opacity: 1; }
+
+  .phase-strip {
+    display: flex;
+    gap: 3px;
+    margin-bottom: 12px;
+  }
+  .phase-strip i {
+    flex: 1;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--bg-2);
+  }
+  .phase-strip i.done { background: var(--accent); }
+  .phase-strip i.crash { background: var(--bad); }
+
+  /* ── Byte grid (torn write) ──────────────────────────────── */
+  .byte-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 16px 0 10px;
+  }
+  .byte {
+    width: 40px;
+    height: 44px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: var(--bg-3);
+    font-family: var(--mono);
+    font-size: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+  }
+  .byte .bv { color: var(--fg); }
+  .byte .bl { font-size: 8.5px; color: var(--fg-dimmer); letter-spacing: 0.04em; }
+  .byte.missing { opacity: 0.28; border-style: dashed; }
+  .byte.missing .bv { color: var(--fg-dimmer); }
+  .byte.f-len { border-color: rgba(122,162,247,0.5); }
+  .byte.f-crc { border-color: rgba(224,175,104,0.6); }
+  .byte.f-key { border-color: rgba(158,206,106,0.45); }
+  .byte.f-val { border-color: rgba(125,207,255,0.5); }
+  .byte.flipped { background: rgba(247,118,142,0.18); border-color: var(--bad); }
+  .byte.flipped .bv { color: var(--bad); }
+
+  .field-legend {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--fg-dim);
+    margin-bottom: 4px;
+  }
+  .field-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; border: 1px solid; }
+
+  /* ── fsync stages ────────────────────────────────────────── */
+  .stages {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    flex-wrap: wrap;
+    margin: 18px 0 6px;
+  }
+  .stage {
+    flex: 1;
+    min-width: 120px;
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    text-align: center;
+    font-size: 12px;
+  }
+  .stage .sname { font-family: var(--mono); color: var(--fg); font-size: 12.5px; }
+  .stage .swhat { color: var(--fg-dimmer); font-size: 11px; margin-top: 3px; }
+  .stage.lost { border-color: var(--bad); background: rgba(247,118,142,0.09); }
+  .stage.kept { border-color: var(--good); background: rgba(158,206,106,0.09); }
+  .stage-arrow { display: flex; align-items: center; color: var(--fg-dimmer); padding: 0 8px; }
+  @media (max-width: 720px) { .stage-arrow { display: none; } }
+
+  /* ── Group commit chart ──────────────────────────────────── */
+  .chart-legend {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    font-size: 12px;
+    color: var(--fg-dim);
+    font-family: var(--mono);
+    margin-bottom: 12px;
+  }
+  .chart-legend i {
+    display: inline-block;
+    width: 11px; height: 11px;
+    border-radius: 3px;
+    margin-right: 6px;
+    vertical-align: -1px;
+  }
+  .stat-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin-top: 18px;
+  }
+  .stat {
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .stat .sl {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--fg-dimmer);
+    display: block;
+  }
+  .stat .sv { font-size: 21px; font-weight: 600; letter-spacing: -0.01em; }
+  .stat .su { font-size: 12px; color: var(--fg-dim); font-weight: 400; margin-left: 3px; }
+
+  /* ── Tables & mapping cards ──────────────────────────────── */
+  .table-wrap { overflow-x: auto; margin: 20px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 560px; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--fg-dim);
+    font-weight: 500;
+  }
+  td { color: var(--fg-dim); }
+  td strong { color: var(--fg); font-weight: 600; }
+
+  .map-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 14px;
+    margin-top: 24px;
+  }
+  .map-card {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .map-card h4 {
+    margin: 0 0 8px;
+    font-size: 15px;
+    color: var(--accent-3);
+    font-family: var(--mono);
+  }
+  .map-card p { font-size: 13.5px; color: var(--fg-dim); margin: 0; }
+  .map-card .term {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--fg-dimmer);
+    display: block;
+    margin-top: 8px;
+    border-top: 1px dashed var(--border);
+    padding-top: 8px;
+  }
+
+  .takeaways { counter-reset: t; list-style: none; padding: 0; max-width: 760px; }
+  .takeaways li {
+    counter-increment: t;
+    position: relative;
+    padding-left: 40px;
+    margin-bottom: 16px;
+    color: var(--fg-dim);
+  }
+  .takeaways li::before {
+    content: counter(t);
+    position: absolute;
+    left: 0; top: 1px;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  footer {
+    padding: 40px 0 60px;
+    color: var(--fg-dimmer);
+    font-size: 13px;
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+
+  .kb-back {
+    border-bottom: 1px solid var(--border);
+    padding: 14px 24px;
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  .kb-back a { color: var(--fg-dimmer); text-decoration: none; transition: color 0.15s; }
+  .kb-back a:hover { color: var(--accent); }
+  .kb-back .arr { color: var(--accent); margin-right: 6px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js" defer></script>
+</head>
+<body>
+
+<nav class="kb-back"><a href="/"><span class="arr">←</span>aaabramov / knowledge base</a></nav>
+
+<!-- ═══ HERO ═══ -->
+<header>
+  <div class="container">
+    <h1>How databases<br/>survive a power cut.</h1>
+    <p class="tagline">
+      Someone trips over the cable mid-write. When the machine boots again, your data is
+      still correct. That trick has a name — the <strong>write-ahead log</strong> — and it
+      fits in about twenty lines. Let's build one and then break it, repeatedly.
+    </p>
+    <div class="hero-meta">
+      <span>one mini key-value store, crashed many ways</span>
+      <span>no prior database knowledge needed</span>
+      <span>runs entirely in your browser</span>
+    </div>
+  </div>
+</header>
+
+<!-- ═══ 1. THE POWER CUT ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">01 · The problem</div>
+    <h2>Writing data in place is a gamble you eventually lose.</h2>
+    <p class="lede">
+      Here is the naive way to store a key-value pair: keep a file, find the row, overwrite it.
+      It works perfectly right up until the instant it doesn't.
+    </p>
+
+    <p>
+      Say <code>user:1</code> currently has a balance of <code>500</code> and we want to set it
+      to <code>400</code>. On disk that's three bytes to overwrite. Watch what a crash in the
+      middle of those three bytes does:
+    </p>
+
+    <div class="card">
+      <div class="controls">
+        <span class="ctl-label">Crash after writing</span>
+        <div class="grow"><input type="range" id="tear-slider" min="0" max="3" step="1" value="0" /></div>
+        <span class="ctl-label" id="tear-count" style="color:var(--fg)">0 of 3 bytes</span>
+      </div>
+      <div class="byte-grid" id="tear-bytes" style="justify-content:flex-start"></div>
+      <div class="step-caption" id="tear-caption"></div>
+    </div>
+
+    <p style="margin-top:24px">
+      There is no safe moment. Overwriting is destructive: the old value is gone before the new
+      one has fully arrived, so an interrupted write leaves a value that was never correct at any
+      point in time. Databases call this a <strong>torn write</strong>.
+    </p>
+
+    <div class="callout">
+      <strong>Two enemies, and they are different.</strong>
+      A <em>lost</em> write is data you were promised that quietly isn't there — bad, but the file
+      still makes sense. A <em>torn</em> write is a value that is neither the old one nor the new
+      one — the file itself is now nonsense, and no amount of retrying fixes it.
+      Everything below is about defeating both.
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 2. THE RULE ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">02 · The rule</div>
+    <h2>Write down what you're <em>about</em> to do, before you do it.</h2>
+    <p class="lede">
+      That's the whole idea. Keep a second file — the log — that only ever grows at the end.
+      Before touching the real data, append a record describing the change and force it to disk.
+      Only then apply it.
+    </p>
+
+    <p>
+      Appending is the key word. We never overwrite anything in the log, so there's no old value
+      to destroy. A crash can leave the log's <em>tail</em> incomplete, but everything before that
+      tail is untouched and still true.
+    </p>
+
+    <pre><code class="language-js">function set(key, value) {
+  const record = { lsn: nextLsn++, op: 'SET', key, value };
+
+  appendToLog(record);   // 1. write the intent to the end of the log
+  fsync(logFile);        // 2. force it out of the OS cache onto the disk
+  memory.set(key, value) // 3. only NOW change the real data
+  return 'committed';    // 4. and only now tell the client "done"
+}</code></pre>
+
+    <p>
+      Steps 1 and 2 must finish before step 3, and step 3 before step 4. That ordering
+      <em>is</em> the guarantee. Swap any two of them and the whole thing stops working — which is
+      exactly what the crash simulator two sections down will show you.
+    </p>
+
+    <h3>Recovery is just reading the log back</h3>
+    <p>
+      After a crash, we don't try to repair anything. We reopen the data file, then walk the log
+      from where the data file left off and re-apply every record we find:
+    </p>
+
+    <pre><code class="language-js">function recover() {
+  const state = loadDataFile();          // last known-good snapshot
+  for (const record of readLog()) {
+    if (record.lsn &lt;= state.lastAppliedLsn) continue;  // already in the snapshot
+    if (!checksumValid(record)) break;                  // torn tail — stop here
+    apply(state, record);
+  }
+  return state;
+}</code></pre>
+
+    <div class="callout warn">
+      <strong>One rule makes this legal: replay must be idempotent.</strong>
+      Recovery can't know exactly how far it got last time, so it will sometimes re-apply a record
+      that already landed. <code>SET balance = 400</code> survives that — run it five times, same
+      answer. <code>balance = balance + 100</code> does not. This is why real WAL records store
+      the resulting <em>value</em> or the raw page bytes, not the arithmetic that produced them.
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 3. STEP-THROUGH VIEWER ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">03 · The write path, one step at a time</div>
+    <h2>Watch the log run ahead of the data.</h2>
+    <p class="lede">
+      Six operations, broken into the four micro-steps from above. Drag through them and keep an
+      eye on the gap between the log and the data file — that gap is doing all the work.
+    </p>
+
+    <div class="card">
+      <div class="controls">
+        <button id="sv-play">▶ Play</button>
+        <button class="ghost" id="sv-prev">‹ Step</button>
+        <button class="ghost" id="sv-next">Step ›</button>
+        <div class="grow"><input type="range" id="sv-slider" min="0" max="24" step="1" value="0" /></div>
+        <span class="ctl-label" id="sv-tick" style="color:var(--fg)">0 / 24</span>
+      </div>
+
+      <div class="panes">
+        <div class="pane">
+          <div class="pane-title"><span>Write-ahead log</span></div>
+          <div class="pane-sub durable">append-only · survives a crash once fsynced</div>
+          <div id="sv-wal"></div>
+        </div>
+        <div class="pane">
+          <div class="pane-title"><span>Memory</span></div>
+          <div class="pane-sub volatile">volatile · vanishes on a crash</div>
+          <div id="sv-mem"></div>
+        </div>
+        <div class="pane">
+          <div class="pane-title"><span>Data file</span></div>
+          <div class="pane-sub durable">on disk · updated lazily</div>
+          <div id="sv-data"></div>
+        </div>
+      </div>
+
+      <div class="step-caption" id="sv-caption"></div>
+    </div>
+
+    <p style="margin-top:24px">
+      Notice how long the data file stays empty. For most of the run the only durable record of
+      your committed writes lives in the log — and that's fine, because the log is enough to
+      rebuild everything. Writing to the data file is an <em>optimisation</em> (it keeps recovery
+      short), not the thing that makes your data safe.
+    </p>
+
+    <div class="callout">
+      <strong>That checkpoint step at tick 12.</strong> A log that only grows is a log that
+      eventually fills the disk. Periodically the database flushes memory into the data file and
+      records how far it got — then everything in the log before that point is dead weight and can
+      be discarded. Checkpoint often and recovery is fast but you do more disk work; checkpoint
+      rarely and it's the reverse. That's the whole tradeoff.
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 4. CRASH SIMULATOR ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">04 · Pull the plug</div>
+    <h2>Three stores, same workload, one power cut.</h2>
+    <p class="lede">
+      The same six operations run in all three columns. Pick a moment, kill the power, and see who
+      comes back intact. Try it at several different ticks — the point isn't any single result,
+      it's which column is boring <em>every single time</em>.
+    </p>
+
+    <div class="card">
+      <div class="controls">
+        <button class="danger" id="cr-crash">⚡ Pull the plug</button>
+        <button class="ghost" id="cr-random">🎲 Random moment</button>
+        <button class="ghost" id="cr-reset" disabled>↺ Reset</button>
+        <div class="grow"><input type="range" id="cr-slider" min="1" max="24" step="1" value="14" /></div>
+        <span class="ctl-label" id="cr-tick" style="color:var(--fg)">tick 14 / 24</span>
+      </div>
+
+      <div class="crash-grid" id="cr-grid">
+        <div class="col col-none" data-mode="none">
+          <div class="crashed-badge"></div>
+          <h4>No log</h4>
+          <div class="col-sub">Overwrite the data file in place. What most people write first.</div>
+          <div class="phase-strip"></div>
+          <div class="mini-title">Log</div>
+          <div class="pane-empty" style="margin-bottom:4px">(none — that's the point)</div>
+          <div class="mini-title" data-title-for="data">Data file</div>
+          <div class="col-data"></div>
+          <div class="col-verdict"></div>
+        </div>
+        <div class="col col-nofsync" data-mode="nofsync">
+          <div class="crashed-badge"></div>
+          <h4>Log, no fsync</h4>
+          <div class="col-sub">Append to the log, but trust the OS to flush it eventually.</div>
+          <div class="phase-strip"></div>
+          <div class="mini-title">Log</div>
+          <div class="col-wal"></div>
+          <div class="mini-title" data-title-for="data">Data file</div>
+          <div class="col-data"></div>
+          <div class="col-verdict"></div>
+        </div>
+        <div class="col col-fsync" data-mode="fsync">
+          <div class="crashed-badge"></div>
+          <h4>Log + fsync</h4>
+          <div class="col-sub">Append, force it to disk, and only then acknowledge the client.</div>
+          <div class="phase-strip"></div>
+          <div class="mini-title">Log</div>
+          <div class="col-wal"></div>
+          <div class="mini-title" data-title-for="data">Data file</div>
+          <div class="col-data"></div>
+          <div class="col-verdict"></div>
+        </div>
+      </div>
+
+      <div class="step-caption" id="cr-caption"></div>
+    </div>
+
+    <p style="margin-top:24px">
+      The middle column is the interesting one, because it looks like it's doing the right thing.
+      It has a log. It appends before it applies. It just doesn't <em>wait</em> for the disk — and
+      so it hands out promises the hardware never agreed to. That failure is silent: no error, no
+      corruption, just a handful of confirmed writes that quietly aren't there any more.
+    </p>
+  </div>
+</section>
+
+<!-- ═══ 5. FSYNC & CHECKSUMS ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">05 · The two details everyone skips</div>
+    <h2>Your write didn't reach the disk, and your record might be half a record.</h2>
+    <p class="lede">
+      The middle column failed for a specific reason worth understanding, and the left column
+      failed for a different one. Here they are, one at a time.
+    </p>
+
+    <h3>a. <code>write()</code> returning success is not durability</h3>
+    <p>
+      When you call <code>write()</code>, the kernel copies your bytes into its page cache and
+      returns immediately. That's a deliberate performance decision — it's why writes feel fast.
+      But the data is still in volatile RAM. Only <code>fsync()</code> asks the drive to actually
+      persist it and waits for the answer. Click a stage to cut the power there:
+    </p>
+
+    <div class="card">
+      <div class="stages" id="fs-stages">
+        <div class="stage" data-stage="0">
+          <div class="sname">your code</div>
+          <div class="swhat">record in a buffer</div>
+        </div>
+        <div class="stage-arrow">→</div>
+        <div class="stage" data-stage="1">
+          <div class="sname">OS page cache</div>
+          <div class="swhat">write() returned "ok"</div>
+        </div>
+        <div class="stage-arrow">→</div>
+        <div class="stage" data-stage="2">
+          <div class="sname">drive cache</div>
+          <div class="swhat">fsync() in progress</div>
+        </div>
+        <div class="stage-arrow">→</div>
+        <div class="stage" data-stage="3">
+          <div class="sname">persistent media</div>
+          <div class="swhat">fsync() returned</div>
+        </div>
+      </div>
+      <div class="controls" style="margin:16px 0 0">
+        <button class="danger" id="fs-crash">⚡ Cut power at the selected stage</button>
+        <span class="ctl-label wrap" id="fs-hint">stage 2 selected — click a box to move it</span>
+      </div>
+      <div class="step-caption" id="fs-caption"></div>
+    </div>
+
+    <h3>b. A half-written record is not a half-truth — it isn't a record</h3>
+    <p>
+      Appending is safe, but the append itself can still be interrupted. So every log record
+      carries its own length and a <strong>checksum</strong> of its contents. On recovery we read
+      records until one fails its checksum or runs off the end of the file, and then we stop —
+      everything after that point is discarded, unread.
+    </p>
+    <p>
+      Here's one record, <code>SET user:1 = 400</code>, laid out as 17 bytes. Drag to choose how
+      many of them made it to disk before the crash:
+    </p>
+
+    <div class="card">
+      <div class="controls">
+        <span class="ctl-label">Bytes on disk</span>
+        <div class="grow"><input type="range" id="rec-slider" min="0" max="17" step="1" value="17" /></div>
+        <span class="ctl-label" id="rec-count" style="color:var(--fg)">17 / 17</span>
+        <button class="ghost" id="rec-flip">Flip a bit in the payload</button>
+      </div>
+      <div class="field-legend">
+        <span><i style="border-color:rgba(122,162,247,0.8)"></i>len (2B)</span>
+        <span><i style="border-color:rgba(224,175,104,0.9)"></i>checksum (4B)</span>
+        <span><i style="border-color:rgba(158,206,106,0.7)"></i>key (7B)</span>
+        <span><i style="border-color:rgba(125,207,255,0.8)"></i>value (4B)</span>
+      </div>
+      <div class="byte-grid" id="rec-bytes"></div>
+      <div class="step-caption" id="rec-caption"></div>
+    </div>
+
+    <div class="callout">
+      <strong>Why this is safe rather than lossy.</strong> A record whose checksum fails was, by
+      definition, never acknowledged to the client — the acknowledgement only happens after
+      <code>fsync()</code> confirms the whole record landed. So discarding a torn tail throws away
+      exactly the writes nobody was ever promised. That's the deal WAL makes, and it's why the
+      ordering in section 2 is non-negotiable.
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 6. GROUP COMMIT ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">06 · Making it fast again</div>
+    <h2>fsync is slow. That doesn't mean durability has to be.</h2>
+    <p class="lede">
+      Waiting for the disk costs roughly a millisecond. Do that once per commit and you're capped
+      at about a thousand commits per second, no matter how big your server is. The fix is to stop
+      doing it once per commit.
+    </p>
+
+    <p>
+      If ten clients commit at the same moment, their records are all sitting in the same log,
+      next to each other. One <code>fsync()</code> makes all ten durable. So the database waits a
+      brief window, collects whatever arrives, flushes once, and acknowledges everybody together.
+      Slide the number of concurrent clients:
+    </p>
+
+    <div class="card">
+      <div class="controls">
+        <span class="ctl-label">Clients committing at once</span>
+        <div class="grow"><input type="range" id="gc-slider" min="1" max="32" step="1" value="12" /></div>
+        <span class="ctl-label" id="gc-n" style="color:var(--fg)">12</span>
+      </div>
+
+      <div class="chart-legend">
+        <span><i style="background:#7aa2f7"></i>waiting to be flushed</span>
+        <span><i style="background:#e0af68"></i>fsync (0.8 ms)</span>
+      </div>
+
+      <svg id="gc-chart" viewBox="0 0 720 180" width="100%" role="img"
+           aria-label="Timeline comparing one fsync per commit against one fsync per batch"></svg>
+
+      <div class="stat-row" id="gc-stats"></div>
+      <div class="step-caption" id="gc-caption"></div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <caption class="visually-hidden" style="position:absolute;left:-9999px">Group commit versus one fsync per commit</caption>
+        <thead>
+          <tr><th>Strategy</th><th>Throughput</th><th>Worst-case commit latency</th><th>Scales with clients?</th></tr>
+        </thead>
+        <tbody id="gc-table"></tbody>
+      </table>
+    </div>
+
+    <div class="callout warn">
+      <strong>Batching is a trade, not a free win.</strong> At low concurrency it makes every
+      commit slower — a lone client now waits out the batching window for nothing. It only pays off
+      when there's a queue. That's why real systems make the window tunable
+      (<code>commit_delay</code> in Postgres, <code>linger.ms</code> in Kafka) and default it to
+      roughly zero.
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 7. WHERE YOU'VE SEEN THIS ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">07 · The same three moves, everywhere</div>
+    <h2>You have been using write-ahead logs for years.</h2>
+    <p class="lede">
+      Append the intent · make it durable · apply it lazily. Once you can see that shape, you start
+      finding it in almost every system that promises not to lose your data.
+    </p>
+
+    <div class="map-grid">
+      <div class="map-card">
+        <h4>PostgreSQL</h4>
+        <p>Every change is a WAL record written before the corresponding data page is touched.
+        Checkpoints flush dirty pages and let old segments be recycled.</p>
+        <span class="term">the log is also the replication stream</span>
+      </div>
+      <div class="map-card">
+        <h4>SQLite</h4>
+        <p>In WAL mode, writers append to a <code>-wal</code> file and readers see a snapshot,
+        so a reader no longer blocks a writer. "Checkpointing" folds the WAL back into the database.</p>
+        <span class="term">PRAGMA journal_mode = WAL</span>
+      </div>
+      <div class="map-card">
+        <h4>Apache Kafka</h4>
+        <p>Here the log isn't an implementation detail — it's the product. A partition is an
+        append-only log, and consumers are just readers replaying it at their own offset.</p>
+        <span class="term">offset ≈ LSN</span>
+      </div>
+      <div class="map-card">
+        <h4>Raft &amp; consensus</h4>
+        <p>Each node keeps a replicated log. An entry is committed once a majority have it durably
+        appended; state machines then apply entries in log order.</p>
+        <span class="term">same idempotent-replay requirement</span>
+      </div>
+      <div class="map-card">
+        <h4>ext4, XFS, NTFS</h4>
+        <p>Filesystem journaling. The metadata change is journalled before the blocks move, so a
+        crash can't leave a directory entry pointing at nothing.</p>
+        <span class="term">that's what fsck replays</span>
+      </div>
+      <div class="map-card">
+        <h4>LSM engines</h4>
+        <p>RocksDB, Cassandra, LevelDB. Writes go to an in-memory memtable — which is pure
+        volatile state — plus a WAL. The WAL is what makes the memtable safe.</p>
+        <span class="term">memtable flush = checkpoint</span>
+      </div>
+    </div>
+
+    <h3>The mental model, in one breath</h3>
+    <ol class="takeaways">
+      <li><strong>Never overwrite in place if you can append instead.</strong> Appends can be cut
+      short; overwrites destroy the old value on their way to failing.</li>
+      <li><strong>Order is the guarantee.</strong> Append → fsync → apply → acknowledge. If you
+      acknowledge before the fsync returns, you are lying to your callers.</li>
+      <li><strong>Recovery is replay, not repair.</strong> Which is only correct if replaying a
+      record twice is the same as replaying it once.</li>
+      <li><strong>Every record carries a checksum</strong> so recovery can find where the truth
+      stops and discard the rest — writes nobody was ever promised.</li>
+      <li><strong>Amortise the fsync, don't skip it.</strong> Batch many commits into one flush;
+      the moment you skip the flush you're back to the middle column.</li>
+    </ol>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    Every simulation on this page is a small state machine running in your browser — no server,
+    no real disk was harmed. Timings in section 6 are illustrative round numbers, not benchmarks;
+    a real <code style="color:var(--accent)">fsync</code> ranges from tens of microseconds on
+    enterprise NVMe to tens of milliseconds on a spinning disk.
+  </div>
+</footer>
+
+<!-- ═══════════════════════════════════════════════════════════
+     SCRIPT
+     ═══════════════════════════════════════════════════════════ -->
+<script type="module">
+
+// anime.js is purely additive flourish: every visual is fully rendered by the
+// render functions below, and animation only adds transient motion on top. If
+// the CDN is unreachable the page works identically, just without the motion.
+let A = null;
+try {
+  A = await import('https://cdn.jsdelivr.net/npm/animejs@4.0.2/+esm');
+} catch (e) {
+  console.info('animejs unavailable — continuing without motion', e);
+}
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function fx(targets, props) {
+  if (!A || typeof A.animate !== 'function' || reduceMotion) return null;
+  try { return A.animate(targets, props); } catch { return null; }
+}
+const stagger = (v) => (A && typeof A.stagger === 'function') ? A.stagger(v) : 0;
+
+// ────────────────────────────────────────────────────────────
+// SHARED MODEL — one key-value store, three durability modes
+// ────────────────────────────────────────────────────────────
+
+const OPS = [
+  { t: 'SET', k: 'user:1', v: 500 },
+  { t: 'SET', k: 'user:2', v: 120 },
+  { t: 'SET', k: 'user:1', v: 400 },
+  { t: 'DEL', k: 'user:2', v: null },
+  { t: 'SET', k: 'user:3', v: 999 },
+  { t: 'SET', k: 'user:1', v: 410 },
+];
+const CHECKPOINT_AFTER = 2;   // checkpoint tick lands right after op index 2 is acked
+const WRITEBACK_EVERY = 9;    // in "no fsync" mode, the OS lazily flushes on these ticks
+
+const PHASES = {
+  none:    ['locate the row', 'overwrite the bytes', 'overwrite complete', 'acknowledge client'],
+  nofsync: ['append to log', 'still only in page cache', 'apply to memory', 'acknowledge client'],
+  fsync:   ['append to log', 'fsync the log', 'apply to memory', 'acknowledge client'],
+};
+const WHY = {
+  none: [
+    'Seek to where this key already lives in the data file.',
+    'The old value is being destroyed right now. A crash here leaves a torn value.',
+    'The new value is fully on disk.',
+    'Tell the client it committed.',
+  ],
+  nofsync: [
+    'A new record goes on the end of the log — but only into the OS page cache.',
+    'write() already returned "ok". The bytes are still in volatile RAM.',
+    'Update the in-memory state.',
+    'Acknowledge the client — before the disk has confirmed anything.',
+  ],
+  fsync: [
+    'A new record goes on the end of the log.',
+    'Block until the drive confirms the record is really persisted.',
+    'Now, and only now, update the in-memory state.',
+    'Acknowledge the client. Everything we promised is already durable.',
+  ],
+};
+
+function buildSteps(mode) {
+  const steps = [];
+  OPS.forEach((o, i) => {
+    for (let p = 0; p < 4; p++) {
+      steps.push({ mode, op: o, i, phase: p, label: PHASES[mode][p], why: WHY[mode][p] });
+    }
+    if (i === CHECKPOINT_AFTER) {
+      steps.push({
+        mode, op: null, i, phase: 4,
+        label: 'checkpoint',
+        why: mode === 'none'
+          ? 'Nothing to do — this store has no log to fold in.'
+          : 'Flush memory into the data file and record how far we got, so the log prefix can be discarded.',
+      });
+    }
+  });
+  return steps;
+}
+const TOTAL_TICKS = buildSteps('fsync').length - 1;   // 24
+
+function fmt(o) {
+  return o.t === 'DEL' ? `DEL ${o.k}` : `SET ${o.k} = ${o.v}`;
+}
+
+// Pure: replay the step list from scratch up to and including `upto`.
+function simulate(mode, upto) {
+  const steps = buildSteps(mode);
+  const st = {
+    mem: new Map(), wal: [], data: new Map(),
+    lastLsn: 0, acked: [], mode, tick: upto, steps,
+    lastTouched: null, checkpointed: false,
+  };
+  for (let t = 0; t <= upto && t < steps.length; t++) {
+    const s = steps[t];
+    const o = s.op;
+
+    if (s.phase === 4) {
+      if (mode !== 'none') {
+        st.data = new Map(st.mem);
+        st.lastLsn = st.wal.length ? st.wal[st.wal.length - 1].lsn : st.lastLsn;
+        st.checkpointed = true;
+      }
+      st.lastTouched = null;
+      continue;
+    }
+
+    if (mode === 'none') {
+      if (s.phase === 1) {
+        // Mid-overwrite: the row currently holds neither value.
+        st.data.set(o.k, { torn: true, from: st.data.get(o.k) ?? null, to: o.v, del: o.t === 'DEL' });
+      } else if (s.phase === 2) {
+        if (o.t === 'DEL') st.data.delete(o.k); else st.data.set(o.k, o.v);
+        st.mem = new Map(st.data);
+      } else if (s.phase === 3) {
+        st.acked.push(s.i);
+      }
+      st.lastTouched = o.k;
+    } else {
+      if (s.phase === 0) {
+        st.wal.push({ lsn: st.wal.length + 1, t: o.t, k: o.k, v: o.v, durable: false });
+      } else if (s.phase === 1) {
+        if (mode === 'fsync') st.wal.forEach(r => { r.durable = true; });
+      } else if (s.phase === 2) {
+        if (o.t === 'DEL') st.mem.delete(o.k); else st.mem.set(o.k, o.v);
+      } else if (s.phase === 3) {
+        st.acked.push(s.i);
+      }
+      st.lastTouched = o.k;
+    }
+
+    // The OS writes back its page cache whenever it feels like it.
+    if (mode === 'nofsync' && t > 0 && t % WRITEBACK_EVERY === 0) {
+      st.wal.forEach(r => { r.durable = true; });
+    }
+  }
+  return st;
+}
+
+// State after applying ops[0..j].
+function prefixState(j) {
+  const m = new Map();
+  for (let i = 0; i <= j; i++) {
+    const o = OPS[i];
+    if (o.t === 'DEL') m.delete(o.k); else m.set(o.k, o.v);
+  }
+  return m;
+}
+function mapsEqual(a, b) {
+  if (a.size !== b.size) return false;
+  for (const [k, v] of a) if (b.get(k) !== v) return false;
+  return true;
+}
+
+// What actually comes back after the power returns.
+function recover(st) {
+  if (st.mode === 'none') {
+    return { state: new Map(st.data), replayed: [], discarded: [] };
+  }
+  const state = new Map(st.data);
+  const replayed = [], discarded = [];
+  st.wal.forEach(r => {
+    if (r.lsn <= st.lastLsn) return;                 // already folded into the data file
+    if (!r.durable) { discarded.push(r.lsn); return; } // never reached the disk
+    if (r.t === 'DEL') state.delete(r.k); else state.set(r.k, r.v);
+    replayed.push(r.lsn);
+  });
+  return { state, replayed, discarded };
+}
+
+// The contract: acknowledged writes must survive. Un-acknowledged ones may or may
+// not — so a recovered state is correct if it equals the result of applying SOME
+// prefix of the op stream that includes every acknowledged op.
+function verdictFor(st) {
+  const rec = recover(st);
+
+  const torn = [...rec.state.entries()].filter(([, v]) => v && v.torn);
+  if (torn.length) {
+    const [k, v] = torn[0];
+    return {
+      level: 'bad',
+      title: 'Corrupted',
+      detail: `<code>${k}</code> holds a half-written value — not ${v.from ?? 'empty'}, not ${v.del ? 'deleted' : v.to}. Nothing can repair it.`,
+      rec,
+    };
+  }
+
+  const lastAcked = st.acked.length ? Math.max(...st.acked) : -1;
+  for (let j = lastAcked; j < OPS.length; j++) {
+    if (mapsEqual(prefixState(j), rec.state)) {
+      return {
+        level: 'good',
+        title: 'Consistent',
+        detail: st.acked.length
+          ? `All ${st.acked.length} acknowledged write${st.acked.length === 1 ? '' : 's'} survived. Anything still in flight was cleanly discarded.`
+          : 'Nothing had been acknowledged yet, and the store came back empty — exactly as promised.',
+        rec,
+      };
+    }
+  }
+
+  const target = prefixState(lastAcked);
+  let lost = 0;
+  new Set([...target.keys(), ...rec.state.keys()]).forEach(k => {
+    if (target.get(k) !== rec.state.get(k)) lost++;
+  });
+  return {
+    level: 'warn',
+    title: `Lost ${lost} acknowledged write${lost === 1 ? '' : 's'}`,
+    detail: 'The client was told these committed. They are gone, and nothing reported an error.',
+    rec,
+  };
+}
+
+// ── shared renderers ────────────────────────────────────────
+function renderKV(map, opts = {}) {
+  if (map.size === 0) return '<div class="pane-empty">(empty)</div>';
+  return [...map.entries()].map(([k, v]) => {
+    if (v && v.torn) {
+      const shown = String(v.to ?? '').slice(0, 1) + '??';
+      return `<div class="kv-row"><span class="k">${k}</span><span class="v torn">${shown} ⚠</span></div>`;
+    }
+    const cls = opts.highlight === k ? 'kv-row changed' : 'kv-row';
+    return `<div class="${cls}"><span class="k">${k}</span><span class="v">${v}</span></div>`;
+  }).join('');
+}
+
+function renderWAL(st, opts = {}) {
+  if (st.wal.length === 0) return '<div class="pane-empty">(empty)</div>';
+  const { replayed = [], discarded = [] } = opts;
+  return st.wal.map(r => {
+    const cls = ['wal-rec'];
+    if (discarded.includes(r.lsn)) cls.push('discarded');
+    else if (replayed.includes(r.lsn)) cls.push('replayed');
+    else cls.push(r.durable ? 'durable' : 'pending');
+    if (opts.newest === r.lsn) cls.push('new');
+
+    let flag;
+    if (discarded.includes(r.lsn)) flag = 'lost';
+    else if (replayed.includes(r.lsn)) flag = 'replayed';
+    else flag = r.durable ? 'durable' : 'cached';
+
+    return `<div class="${cls.join(' ')}" data-lsn="${r.lsn}">
+      <span class="lsn">#${r.lsn}</span>
+      <span class="body">${fmt(r)}</span>
+      <span class="flag">${flag}</span>
+    </div>`;
+  }).join('');
+}
+
+// ────────────────────────────────────────────────────────────
+// 1. TORN OVERWRITE (hero demo)
+// ────────────────────────────────────────────────────────────
+(() => {
+  const OLD = ['5', '0', '0'];
+  const NEW = ['4', '0', '0'];
+  const slider = document.getElementById('tear-slider');
+  const grid = document.getElementById('tear-bytes');
+  const count = document.getElementById('tear-count');
+  const cap = document.getElementById('tear-caption');
+  if (!slider) return;
+
+  function render() {
+    const n = +slider.value;
+    count.textContent = `${n} of 3 bytes`;
+    grid.innerHTML = OLD.map((oldB, i) => {
+      const written = i < n;
+      const ch = written ? NEW[i] : oldB;
+      const cls = written ? 'byte f-val' : 'byte f-key';
+      return `<div class="${cls}">
+        <span class="bv">${ch}</span>
+        <span class="bl">${written ? 'new' : 'old'}</span>
+      </div>`;
+    }).join('');
+
+    let msg, why;
+    if (n === 0) {
+      msg = 'value on disk: 500';
+      why = 'The crash beat us to it. Nothing changed — the old value is intact, and the write simply never happened.';
+    } else if (n === 3) {
+      msg = 'value on disk: 400';
+      why = 'We got lucky: all three bytes landed before the power went. This is the only good outcome of the four.';
+    } else {
+      const disk = NEW.slice(0, n).concat(OLD.slice(n)).join('');
+      msg = `value on disk: ${disk}`;
+      why = `Neither 500 nor 400 — ${disk} is a number this account never had. Nobody can tell from the file whether it should be rolled back or forward.`;
+    }
+    cap.innerHTML = `<span class="tick">crash</span>${msg}<span class="why">${why}</span>`;
+  }
+  slider.addEventListener('input', render);
+  render();
+})();
+
+// ────────────────────────────────────────────────────────────
+// 3. STEP-THROUGH VIEWER
+// ────────────────────────────────────────────────────────────
+(() => {
+  const slider = document.getElementById('sv-slider');
+  const tickEl = document.getElementById('sv-tick');
+  const walEl = document.getElementById('sv-wal');
+  const memEl = document.getElementById('sv-mem');
+  const dataEl = document.getElementById('sv-data');
+  const capEl = document.getElementById('sv-caption');
+  const playBtn = document.getElementById('sv-play');
+  if (!slider) return;
+
+  const steps = buildSteps('fsync');
+  slider.max = String(steps.length - 1);
+  let timer = null;
+
+  function render() {
+    const t = +slider.value;
+    const st = simulate('fsync', t);
+    const s = steps[t];
+    const newest = s.phase === 0 && st.wal.length ? st.wal[st.wal.length - 1].lsn : null;
+
+    tickEl.textContent = `${t} / ${steps.length - 1}`;
+    walEl.innerHTML = renderWAL(st, { newest });
+    memEl.innerHTML = renderKV(st.mem, { highlight: s.phase === 2 ? st.lastTouched : null });
+    dataEl.innerHTML = renderKV(st.data);
+
+    const what = s.op ? `${s.label} — ${fmt(s.op)}` : s.label;
+    capEl.innerHTML = `<span class="tick">tick ${t}</span>${what}<span class="why">${s.why}</span>`;
+
+    if (newest) fx(walEl.querySelector(`[data-lsn="${newest}"]`), { opacity: [0, 1], translateX: [-8, 0], duration: 260 });
+    if (s.phase === 1) fx(walEl.querySelectorAll('.wal-rec.durable'), { scale: [1.02, 1], duration: 240, delay: stagger(30) });
+    if (s.phase === 4) fx(dataEl.querySelectorAll('.kv-row'), { opacity: [0.2, 1], duration: 320, delay: stagger(50) });
+  }
+
+  function stop() { clearInterval(timer); timer = null; playBtn.textContent = '▶ Play'; }
+  playBtn.addEventListener('click', () => {
+    if (timer) return stop();
+    if (+slider.value >= steps.length - 1) slider.value = '0';
+    playBtn.textContent = '❚❚ Pause';
+    timer = setInterval(() => {
+      if (+slider.value >= steps.length - 1) return stop();
+      slider.value = String(+slider.value + 1);
+      render();
+    }, 750);
+  });
+  document.getElementById('sv-prev').addEventListener('click', () => {
+    stop(); slider.value = String(Math.max(0, +slider.value - 1)); render();
+  });
+  document.getElementById('sv-next').addEventListener('click', () => {
+    stop(); slider.value = String(Math.min(steps.length - 1, +slider.value + 1)); render();
+  });
+  slider.addEventListener('input', () => { stop(); render(); });
+  render();
+})();
+
+// ────────────────────────────────────────────────────────────
+// 4. CRASH SIMULATOR
+// ────────────────────────────────────────────────────────────
+(() => {
+  const slider = document.getElementById('cr-slider');
+  const tickEl = document.getElementById('cr-tick');
+  const capEl = document.getElementById('cr-caption');
+  const crashBtn = document.getElementById('cr-crash');
+  const randBtn = document.getElementById('cr-random');
+  const resetBtn = document.getElementById('cr-reset');
+  const cols = [...document.querySelectorAll('#cr-grid .col')];
+  if (!slider) return;
+
+  slider.max = String(TOTAL_TICKS);
+  let crashed = false;
+
+  function renderCol(col, t) {
+    const mode = col.dataset.mode;
+    const st = simulate(mode, t);
+    const steps = buildSteps(mode);
+
+    const strip = col.querySelector('.phase-strip');
+    strip.innerHTML = steps.map((_, i) => {
+      if (crashed && i === t) return '<i class="crash"></i>';
+      return `<i class="${i <= t ? 'done' : ''}"></i>`;
+    }).join('');
+
+    const walBox = col.querySelector('.col-wal');
+    const dataBox = col.querySelector('.col-data');
+    const vBox = col.querySelector('.col-verdict');
+
+    const dataTitle = col.querySelector('[data-title-for="data"]');
+
+    if (!crashed) {
+      if (walBox) walBox.innerHTML = renderWAL(st);
+      dataBox.innerHTML = renderKV(st.data);
+      dataTitle.textContent = 'Data file';
+      vBox.innerHTML = '';
+      col.classList.remove('is-crashed');
+      return;
+    }
+
+    const v = verdictFor(st);
+    if (walBox) walBox.innerHTML = renderWAL(st, { replayed: v.rec.replayed, discarded: v.rec.discarded });
+    dataBox.innerHTML = renderKV(v.rec.state);
+    // The no-log store has nothing to replay — it just comes back as whatever the
+    // last interrupted overwrite left behind.
+    dataTitle.textContent = mode === 'none' ? 'After reboot' : 'After recovery';
+    vBox.innerHTML = `<div class="verdict ${v.level}">
+      <span class="vtitle">${v.title}</span>${v.detail}
+    </div>`;
+    col.classList.add('is-crashed');
+  }
+
+  function render() {
+    const t = +slider.value;
+    tickEl.textContent = `tick ${t} / ${TOTAL_TICKS}`;
+    cols.forEach(c => renderCol(c, t));
+
+    const s = buildSteps('fsync')[t];
+    if (!crashed) {
+      const what = s.op
+        ? `operation ${s.i + 1} of ${OPS.length} — ${fmt(s.op)}`
+        : 'checkpoint';
+      capEl.innerHTML = `<span class="tick">tick ${t}</span>${what}` +
+        `<span class="why">All three columns are the same number of steps into this operation, but each is doing something different with it. Hit “Pull the plug” to cut power right here.</span>`;
+    } else {
+      capEl.innerHTML = `<span class="tick">tick ${t}</span>power lost, machines rebooted, recovery finished` +
+        `<span class="why">Move the slider and crash again at a different moment. Two of these three columns break at <em>some</em> tick; one of them never does.</span>`;
+    }
+  }
+
+  function doCrash() {
+    crashed = true;
+    resetBtn.disabled = false;
+    crashBtn.disabled = true;
+    render();
+    fx(cols, { translateX: [0, -5, 5, -3, 3, 0], duration: 420, delay: stagger(40) });
+    cols.forEach(c => {
+      const replayed = c.querySelectorAll('.wal-rec.replayed');
+      if (replayed.length) fx(replayed, { opacity: [0.3, 1], translateX: [-6, 0], duration: 300, delay: stagger(60) });
+    });
+  }
+
+  crashBtn.addEventListener('click', doCrash);
+  randBtn.addEventListener('click', () => {
+    slider.value = String(1 + Math.floor(Math.random() * TOTAL_TICKS));
+    crashed = false; crashBtn.disabled = false; resetBtn.disabled = true;
+    render();
+    doCrash();
+  });
+  resetBtn.addEventListener('click', () => {
+    crashed = false; crashBtn.disabled = false; resetBtn.disabled = true;
+    render();
+  });
+  slider.addEventListener('input', () => {
+    if (crashed) { crashed = false; crashBtn.disabled = false; resetBtn.disabled = true; }
+    render();
+  });
+  render();
+})();
+
+// ────────────────────────────────────────────────────────────
+// 5a. FSYNC STAGES
+// ────────────────────────────────────────────────────────────
+(() => {
+  const wrap = document.getElementById('fs-stages');
+  const capEl = document.getElementById('fs-caption');
+  const hint = document.getElementById('fs-hint');
+  const btn = document.getElementById('fs-crash');
+  if (!wrap) return;
+
+  const stages = [...wrap.querySelectorAll('.stage')];
+  let selected = 2;
+  let fired = false;
+
+  const OUTCOMES = [
+    { survives: false, title: 'nothing written', why: 'The record only ever existed in your process\'s memory. Expected — the client was never told it committed.' },
+    { survives: false, title: 'silently lost', why: 'write() returned "ok" and your code moved on, but the bytes were only in the kernel\'s page cache. This is the middle column of the crash simulator.' },
+    { survives: false, title: 'still not guaranteed', why: 'fsync() has been called but has not returned. Until it does, the drive has made you no promises. Correct code is still blocking here.' },
+    { survives: true, title: 'durable', why: 'fsync() returned, so the drive has confirmed the bytes are on persistent media. This is the only point at which it is honest to acknowledge the client.' },
+  ];
+
+  function render() {
+    stages.forEach((s, i) => {
+      s.classList.remove('lost', 'kept');
+      if (!fired) return;
+      if (i <= selected) s.classList.add(OUTCOMES[selected].survives ? 'kept' : 'lost');
+    });
+    hint.textContent = `stage ${selected + 1} selected — click a box to move it`;
+    if (!fired) { capEl.innerHTML = '<span class="tick">ready</span>pick a stage, then cut the power<span class="why">Only one of these four points is safe to acknowledge a client from.</span>'; return; }
+    const o = OUTCOMES[selected];
+    capEl.innerHTML = `<span class="tick">crash at stage ${selected + 1}</span>` +
+      `<span style="color:var(--${o.survives ? 'good' : 'bad'})">${o.title}</span>` +
+      `<span class="why">${o.why}</span>`;
+  }
+
+  stages.forEach((s, i) => s.addEventListener('click', () => {
+    selected = i; fired = false; render();
+  }));
+  btn.addEventListener('click', () => {
+    fired = true; render();
+    fx(stages.slice(0, selected + 1), { scale: [1, 0.96, 1], duration: 320, delay: stagger(40) });
+  });
+  render();
+})();
+
+// ────────────────────────────────────────────────────────────
+// 5b. TORN RECORD + CHECKSUM
+// ────────────────────────────────────────────────────────────
+(() => {
+  const slider = document.getElementById('rec-slider');
+  const grid = document.getElementById('rec-bytes');
+  const count = document.getElementById('rec-count');
+  const capEl = document.getElementById('rec-caption');
+  const flipBtn = document.getElementById('rec-flip');
+  if (!slider) return;
+
+  // Record layout: [len:2][crc:4][key:7 = "user:1" + NUL][value:4 LE]
+  const KEY = 'user:1';
+  const keyBytes = [...KEY].map(c => c.charCodeAt(0)).concat([0x00]);
+  const valBytes = [0x90, 0x01, 0x00, 0x00];   // 400, little-endian
+  const payload = keyBytes.concat(valBytes);
+
+  function fnv1a(bytes) {
+    let h = 0x811c9dc5;
+    for (const b of bytes) {
+      h ^= b;
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return h >>> 0;
+  }
+  const HEADER_BYTES = 6;                    // 2-byte length + 4-byte checksum
+  const LEN = HEADER_BYTES + payload.length; // 17
+  const crc = fnv1a(payload);
+  const crcBytes = [(crc >>> 24) & 0xff, (crc >>> 16) & 0xff, (crc >>> 8) & 0xff, crc & 0xff];
+  const lenBytes = [(LEN >>> 8) & 0xff, LEN & 0xff];
+
+  const FIELDS = [
+    ...lenBytes.map((b, i) => ({ b, f: 'len', l: `len${i}` })),
+    ...crcBytes.map((b, i) => ({ b, f: 'crc', l: `crc${i}` })),
+    ...keyBytes.map((b, i) => ({ b, f: 'key', l: i < KEY.length ? KEY[i] : 'NUL' })),
+    ...valBytes.map((b, i) => ({ b, f: 'val', l: `v${i}` })),
+  ];
+
+  let flipped = false;
+  const hex = n => n.toString(16).padStart(2, '0').toUpperCase();
+
+  function render() {
+    const n = +slider.value;
+    count.textContent = `${n} / ${LEN}`;
+    flipBtn.disabled = n < LEN;
+    if (n < LEN) flipped = false;
+    flipBtn.textContent = flipped ? 'Un-flip the bit' : 'Flip a bit in the payload';
+
+    grid.innerHTML = FIELDS.map((f, i) => {
+      const written = i < n;
+      const isFlipped = flipped && i === HEADER_BYTES;   // first byte of the key
+      const val = isFlipped ? f.b ^ 0x01 : f.b;
+      const cls = ['byte', `f-${f.f}`];
+      if (!written) cls.push('missing');
+      if (isFlipped && written) cls.push('flipped');
+      return `<div class="${cls.join(' ')}">
+        <span class="bv">${written ? hex(val) : '··'}</span>
+        <span class="bl">${f.l}</span>
+      </div>`;
+    }).join('');
+
+    let title, why, color;
+    if (n < 2) {
+      title = 'no length field'; color = 'warn';
+      why = 'Recovery reads fewer than two bytes and stops. It has no idea a record was even starting here — which is correct, because it was never acknowledged.';
+    } else if (n < HEADER_BYTES) {
+      title = 'header incomplete'; color = 'warn';
+      why = `The length field says this record should be ${LEN} bytes, but the checksum field itself is truncated. Stop, discard the tail.`;
+    } else if (n < LEN) {
+      title = 'record truncated — discarded'; color = 'bad';
+      why = `The header claims ${LEN} bytes; only ${n} arrived. There is nothing to checksum against, so recovery stops here and treats everything from this offset on as empty. The next append will overwrite it.`;
+    } else if (flipped) {
+      const stored = crcBytes.map(hex).join('');
+      const actual = fnv1a(withFlippedBit(payload)).toString(16).toUpperCase().padStart(8, '0');
+      title = 'checksum mismatch — silent corruption caught'; color = 'bad';
+      why = `All ${LEN} bytes are present, but one bit rotted. Stored checksum ${stored} ≠ recomputed ${actual}, so the record is rejected. This is why the checksum covers the payload and not just its length.`;
+    } else {
+      title = 'checksum valid — replay it'; color = 'good';
+      why = `All ${LEN} bytes present and the checksum matches. Recovery applies SET user:1 = 400 and moves on to the next record.`;
+    }
+    capEl.innerHTML = `<span class="tick">recovery reads</span>` +
+      `<span style="color:var(--${color})">${title}</span><span class="why">${why}</span>`;
+
+    const missing = grid.querySelectorAll('.byte.missing');
+    if (missing.length) fx(missing, { opacity: [0.05, 0.28], duration: 240, delay: stagger(12) });
+  }
+
+  function withFlippedBit(p) { const c = p.slice(); c[0] ^= 0x01; return c; }
+
+  slider.addEventListener('input', render);
+  flipBtn.addEventListener('click', () => { flipped = !flipped; render(); });
+  render();
+})();
+
+// ────────────────────────────────────────────────────────────
+// 6. GROUP COMMIT
+// ────────────────────────────────────────────────────────────
+(() => {
+  const slider = document.getElementById('gc-slider');
+  const nEl = document.getElementById('gc-n');
+  const svg = document.getElementById('gc-chart');
+  const stats = document.getElementById('gc-stats');
+  const capEl = document.getElementById('gc-caption');
+  const tbody = document.getElementById('gc-table');
+  if (!slider) return;
+
+  const FSYNC_MS = 0.8;
+  const WINDOW_MS = 1.0;
+  const C_WAIT = '#7aa2f7';   // validated pair: ΔE 22.6 protan / 24.6 normal vs C_FSYNC
+  const C_FSYNC = '#e0af68';
+  // PAD_R reserves room for the "total ms" label that trails each row.
+  const PAD_L = 8, PAD_R = 96, W = 720;
+  const PLOT_W = W - PAD_L - PAD_R;
+
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+
+  // Trailing label that flips to right-aligned rather than running off the canvas.
+  function trailingLabel(xEnd, y, text) {
+    const est = text.length * 6.6;
+    const overflows = xEnd + 8 + est > W - 8;
+    const tx = overflows ? W - 8 : xEnd + 8;
+    return `<text x="${tx.toFixed(1)}" y="${y}" fill="#e6edf3" font-size="12"
+              text-anchor="${overflows ? 'end' : 'start'}"
+              font-family="SF Mono, Menlo, monospace">${esc(text)}</text>`;
+  }
+
+  function render() {
+    const n = +slider.value;
+    nEl.textContent = String(n);
+
+    const serialTotal = n * FSYNC_MS;
+    const groupTotal = WINDOW_MS + FSYNC_MS;
+    const maxMs = Math.max(serialTotal, groupTotal);
+    const x = ms => PAD_L + (ms / maxMs) * PLOT_W;
+
+    const serialTput = 1000 / FSYNC_MS;                    // capped, independent of n
+    const groupTput = n / (groupTotal / 1000);
+    const serialWorst = serialTotal;
+    const groupWorst = groupTotal;
+
+    // rows
+    let s = '';
+    const rowY = [46, 116], barH = 26;
+
+    [['one fsync per commit', 0], ['group commit', 1]].forEach(([label, r]) => {
+      s += `<text x="${PAD_L}" y="${rowY[r] - 12}" fill="#9aa4b2" font-size="12"
+              font-family="SF Mono, Menlo, monospace">${esc(label)}</text>`;
+    });
+
+    // serial: n back-to-back fsyncs, 2px surface gap between adjacent fills
+    for (let i = 0; i < n; i++) {
+      const x0 = x(i * FSYNC_MS), x1 = x((i + 1) * FSYNC_MS);
+      const w = Math.max(1, x1 - x0 - 2);
+      s += `<rect x="${x0.toFixed(1)}" y="${rowY[0]}" width="${w.toFixed(1)}" height="${barH}"
+              rx="4" fill="${C_FSYNC}"><title>commit ${i + 1}: fsync ${FSYNC_MS} ms</title></rect>`;
+    }
+    s += trailingLabel(x(serialTotal), rowY[0] + 18, `${serialTotal.toFixed(1)} ms`);
+
+    // group: one batching window, then a single shared fsync
+    const gw = Math.max(1, x(WINDOW_MS) - PAD_L - 2);
+    s += `<rect x="${PAD_L}" y="${rowY[1]}" width="${gw.toFixed(1)}" height="${barH}" rx="4"
+            fill="${C_WAIT}"><title>${n} commits queue during a ${WINDOW_MS} ms window</title></rect>`;
+    const fx0 = x(WINDOW_MS), fw = Math.max(1, x(groupTotal) - fx0);
+    s += `<rect x="${fx0.toFixed(1)}" y="${rowY[1]}" width="${fw.toFixed(1)}" height="${barH}" rx="4"
+            fill="${C_FSYNC}"><title>one fsync makes all ${n} durable</title></rect>`;
+    s += trailingLabel(x(groupTotal), rowY[1] + 18, `${groupTotal.toFixed(1)} ms · all ${n} committed`);
+
+    // axis
+    const axisY = 160;
+    s += `<line x1="${PAD_L}" y1="${axisY}" x2="${W - PAD_R}" y2="${axisY}" stroke="#2a3142" />`;
+    const stepMs = maxMs <= 4 ? 1 : maxMs <= 12 ? 2 : 5;
+    for (let t = 0; t <= maxMs + 0.001; t += stepMs) {
+      s += `<line x1="${x(t).toFixed(1)}" y1="${axisY}" x2="${x(t).toFixed(1)}" y2="${axisY + 4}" stroke="#2a3142" />`;
+      s += `<text x="${x(t).toFixed(1)}" y="${axisY + 17}" fill="#5f6a7d" font-size="10.5"
+              text-anchor="middle" font-family="SF Mono, Menlo, monospace">${t}</text>`;
+    }
+    s += `<text x="${W - 8}" y="${axisY + 17}" fill="#5f6a7d" font-size="10.5" text-anchor="end"
+            font-family="SF Mono, Menlo, monospace">milliseconds</text>`;
+
+    svg.innerHTML = s;
+
+    const faster = groupTput / serialTput;
+    stats.innerHTML = `
+      <div class="stat"><span class="sl">one fsync per commit</span>
+        <span class="sv">${Math.round(serialTput).toLocaleString()}<span class="su">commits/s</span></span></div>
+      <div class="stat"><span class="sl">group commit</span>
+        <span class="sv" style="color:var(--good)">${Math.round(groupTput).toLocaleString()}<span class="su">commits/s</span></span></div>
+      <div class="stat"><span class="sl">difference</span>
+        <span class="sv" style="color:var(--${faster >= 1 ? 'good' : 'warn'})">${faster >= 1 ? '×' + faster.toFixed(1) : '÷' + (1 / faster).toFixed(1)}<span class="su">${faster >= 1 ? 'faster' : 'slower'}</span></span></div>`;
+
+    tbody.innerHTML = `
+      <tr><td><strong>One fsync per commit</strong></td><td>${Math.round(serialTput).toLocaleString()} commits/s</td>
+          <td>${serialWorst.toFixed(1)} ms</td><td>No — the disk is the bottleneck</td></tr>
+      <tr><td><strong>Group commit</strong></td><td>${Math.round(groupTput).toLocaleString()} commits/s</td>
+          <td>${groupWorst.toFixed(1)} ms</td><td>Yes — one flush serves the whole batch</td></tr>`;
+
+    if (n === 1) {
+      capEl.innerHTML = `<span class="tick">n = 1</span>` +
+        `<span style="color:var(--warn)">batching is a pure loss here</span>` +
+        `<span class="why">A lone client waits out the ${WINDOW_MS} ms window for no reason and commits ${(1 / faster).toFixed(1)}× slower. Group commit only earns its keep when there is a queue — which is why the window defaults to ~0 in real systems.</span>`;
+    } else if (faster < 1) {
+      capEl.innerHTML = `<span class="tick">n = ${n}</span>` +
+        `<span style="color:var(--warn)">still not worth it</span>` +
+        `<span class="why">Too few clients to amortise the batching window. Keep sliding right.</span>`;
+    } else {
+      capEl.innerHTML = `<span class="tick">n = ${n}</span>` +
+        `<span style="color:var(--good)">${Math.round(groupTput).toLocaleString()} commits/s from the same hardware</span>` +
+        `<span class="why">Same disk, same ${FSYNC_MS} ms flush, same durability guarantee — ${n} commits share one fsync instead of paying for ${n}. Nothing was skipped; the cost was amortised.</span>`;
+    }
+  }
+
+  slider.addEventListener('input', render);
+  render();
+})();
+
+// Prism loads with `defer`, so it may or may not have run by now.
+if (window.Prism) window.Prism.highlightAll();
+else window.addEventListener('DOMContentLoaded', () => window.Prism && window.Prism.highlightAll());
+
+</script>
+</body>
+</html>
