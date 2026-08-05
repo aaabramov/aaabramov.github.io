@@ -1,3 +1,9 @@
+- slug: write-ahead-log
+  title: "How databases survive a power cut"
+  subtitle: "Build a write-ahead log, then crash it repeatedly until the idea sticks."
+  tags: [databases, durability, storage]
+  published: 2026-08-05
+
 - slug: game-of-life-3d
   title: "Conway's Life, in three dimensions"
   subtitle: "Conway's rules don't survive the jump to 3D — an interactive explorer for the ones that do."
