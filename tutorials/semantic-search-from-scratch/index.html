@@ -1,0 +1,1658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Semantic search from scratch</title>
+<style>
+  :root {
+    --bg: #0b0e14;
+    --bg-2: #141925;
+    --bg-3: #1c2232;
+    --fg: #e6edf3;
+    --fg-dim: #9aa4b2;
+    --fg-dimmer: #5f6a7d;
+    --accent: #7aa2f7;
+    --accent-2: #bb9af7;
+    --accent-3: #7dcfff;
+    --good: #9ece6a;
+    --warn: #e0af68;
+    --bad: #f7768e;
+    --border: #2a3142;
+    --radius: 12px;
+    --mono: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, system-ui, sans-serif;
+
+    /* Retrieval strategies. Three pairwise-distinct encodings; every one of them
+       also carries a glyph and a text label, so colour is never load-bearing. */
+    --kw: #e0af68;    /* keyword / BM25  ▲ */
+    --vec: #7aa2f7;   /* vector          ● */
+    --fuse: #e6edf3;  /* fusion / RRF    ★ */
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.6;
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  .container { max-width: 980px; margin: 0 auto; padding: 0 24px; }
+
+  /* ── Hero ─────────────────────────────────────────────── */
+  header {
+    padding: 80px 0 60px;
+    background: radial-gradient(ellipse at top, rgba(122,162,247,0.12), transparent 60%);
+    border-bottom: 1px solid var(--border);
+  }
+  h1 {
+    font-size: clamp(32px, 5vw, 52px);
+    line-height: 1.15;
+    margin: 0 0 16px;
+    letter-spacing: -0.02em;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 50%, var(--accent-3) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 700;
+  }
+  .tagline {
+    font-size: clamp(17px, 2vw, 20px);
+    color: var(--fg-dim);
+    max-width: 660px;
+    margin: 0 0 28px;
+  }
+  .hero-meta {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: var(--fg-dimmer);
+    font-family: var(--mono);
+  }
+  .hero-meta span::before { content: "◆ "; color: var(--accent); }
+
+  /* ── Sections ─────────────────────────────────────────── */
+  section {
+    padding: 64px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  section:last-of-type { border-bottom: none; }
+  section h2 {
+    font-size: clamp(24px, 3.5vw, 32px);
+    margin: 0 0 8px;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+  }
+  section .eyebrow {
+    font-family: var(--mono);
+    color: var(--accent);
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  section .lede {
+    color: var(--fg-dim);
+    max-width: 720px;
+    margin: 0 0 32px;
+    font-size: 17px;
+  }
+  p { margin: 0 0 16px; max-width: 760px; }
+  ul, ol { max-width: 760px; color: var(--fg-dim); }
+  li { margin-bottom: 8px; }
+  li strong { color: var(--fg); }
+  a { color: var(--accent); }
+  p code, li code, td code, .lede code {
+    font-family: var(--mono);
+    background: var(--bg-3);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.88em;
+    color: var(--accent-3);
+  }
+  h3 { font-size: 18px; margin: 32px 0 10px; }
+  h4 { font-size: 15px; margin: 0 0 8px; }
+
+  .callout {
+    padding: 16px 20px;
+    background: var(--bg-2);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    margin: 20px 0;
+    color: var(--fg-dim);
+    max-width: 760px;
+  }
+  .callout strong { color: var(--fg); }
+  .callout.warn { border-left-color: var(--warn); }
+  .callout.good { border-left-color: var(--good); }
+
+  .card {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-top: 20px;
+  }
+  @media (max-width: 560px) { .card { padding: 16px; } }
+
+  /* ── Controls ─────────────────────────────────────────── */
+  button {
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: transform 0.1s, background 0.15s, opacity 0.15s;
+  }
+  button:hover:not(:disabled) { background: var(--accent-2); transform: translateY(-1px); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.ghost {
+    background: transparent;
+    color: var(--fg-dim);
+    border: 1px solid var(--border);
+    font-weight: 500;
+  }
+  button.ghost:hover:not(:disabled) { background: var(--bg-3); color: var(--fg); transform: none; }
+  button.ghost[aria-pressed="true"] {
+    border-color: var(--accent);
+    color: var(--fg);
+    background: rgba(122,162,247,0.12);
+  }
+  button.ghost[aria-pressed="true"]::before { content: "▸ "; color: var(--accent); }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--bg-3);
+    outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: 2px solid var(--bg);
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: 2px solid var(--bg);
+  }
+  input[type=text] {
+    width: 100%;
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: var(--fg);
+    font-family: var(--sans);
+    font-size: 15px;
+  }
+  input[type=text]:focus { outline: none; border-color: var(--accent); }
+
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+  }
+  .controls .grow { flex: 1; min-width: 160px; }
+  .ctl-label {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--fg-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+  }
+  .ctl-value { font-family: var(--mono); font-size: 13px; color: var(--accent); min-width: 68px; }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+
+  /* ── Code blocks ──────────────────────────────────────── */
+  pre {
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px 20px;
+    overflow-x: auto;
+    margin: 18px 0;
+    font-size: 13.5px;
+    line-height: 1.65;
+    max-width: 760px;
+  }
+  pre code { font-family: var(--mono); color: var(--fg); background: none; padding: 0; }
+  /* Prism tokens themed to this palette. The page stays readable if Prism never loads. */
+  .token.comment, .token.prolog, .token.doc-comment { color: var(--fg-dimmer); font-style: italic; }
+  .token.keyword, .token.boolean, .token.builtin { color: var(--accent-2); }
+  .token.string, .token.char, .token.triple-quoted-string { color: var(--good); }
+  .token.number { color: var(--warn); }
+  .token.function { color: var(--accent-3); }
+  .token.operator, .token.punctuation { color: var(--fg-dim); }
+  .token.class-name, .token.symbol { color: var(--accent); }
+  .token.annotation { color: var(--warn); }
+
+  /* ── Tables ───────────────────────────────────────────── */
+  .table-wrap { overflow-x: auto; margin: 20px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 520px; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--fg-dim);
+    font-weight: 500;
+  }
+  td { color: var(--fg-dim); }
+  td strong { color: var(--fg); font-weight: 600; }
+  td.num { font-family: var(--mono); text-align: right; white-space: nowrap; }
+
+  /* ── §2 chunking ──────────────────────────────────────── */
+  .chunk-doc {
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 18px;
+    font-size: 14.5px;
+    line-height: 2.1;
+    margin-bottom: 18px;
+  }
+  .chunk-doc .w { padding: 2px 0; }
+  /* Alternating chunks band on LIGHTNESS within one hue, not on two hues.
+     #7aa2f7 vs #bb9af7 measures ΔE 0.3 under protanopia and 8.7 for normal
+     vision — indistinguishable, which would defeat the whole point here. */
+  .chunk-doc .c0 { background: rgba(122,162,247,0.22); box-shadow: 0 -2px 0 0 var(--accent) inset; }
+  .chunk-doc .c1 { background: rgba(122,162,247,0.05); box-shadow: 0 -2px 0 0 var(--fg-dimmer) inset; }
+  .chunk-doc .ov { background: rgba(224,175,104,0.22); box-shadow: 0 -2px 0 0 var(--warn) inset; }
+  .chunk-doc .ans { outline: 1px dashed var(--good); outline-offset: 1px; color: var(--fg); font-weight: 600; }
+  .chunk-key { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; font-family: var(--mono); color: var(--fg-dim); margin-bottom: 14px; }
+  .chunk-key i { font-style: normal; padding: 1px 7px; border-radius: 3px; margin-right: 5px; }
+
+  .verdict {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .stat {
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .stat .sl {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--fg-dimmer);
+    display: block;
+  }
+  .stat .sv { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+  .stat .su { font-size: 12px; color: var(--fg-dim); font-weight: 400; margin-left: 3px; }
+  .diagnosis {
+    padding: 14px 18px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-3);
+    font-size: 14.5px;
+  }
+  .diagnosis .tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    display: inline-block;
+    margin-right: 10px;
+    padding: 2px 8px;
+    border-radius: 3px;
+  }
+  .tag.bad  { background: rgba(247,118,142,0.15); color: var(--bad); }
+  .tag.warn { background: rgba(224,175,104,0.15); color: var(--warn); }
+  .tag.good { background: rgba(158,206,106,0.15); color: var(--good); }
+
+  /* ── §5 hybrid search ─────────────────────────────────── */
+  .cols {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+  }
+  @media (max-width: 860px) { .cols { grid-template-columns: 1fr; } }
+  .col {
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    min-width: 0;
+  }
+  .col-head {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding-bottom: 8px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    align-items: baseline;
+  }
+  .col-head .glyph { margin-right: 6px; }
+  .col-head .sub { color: var(--fg-dimmer); font-size: 10.5px; text-transform: none; letter-spacing: 0; }
+  .col.kw   .col-head { color: var(--kw);   border-bottom-color: rgba(224,175,104,0.4); }
+  .col.vec  .col-head { color: var(--vec);  border-bottom-color: rgba(122,162,247,0.4); }
+  .col.fuse .col-head { color: var(--fuse); border-bottom-color: rgba(230,237,243,0.45); }
+  .hit {
+    display: grid;
+    grid-template-columns: 20px 1fr;
+    gap: 8px;
+    padding: 8px 0;
+    border-bottom: 1px dashed rgba(42,49,66,0.9);
+    font-size: 13px;
+  }
+  .hit:last-child { border-bottom: none; }
+  .hit .rank { font-family: var(--mono); font-size: 11px; color: var(--fg-dimmer); padding-top: 2px; }
+  .hit .t { color: var(--fg); line-height: 1.4; overflow-wrap: anywhere; }
+  .hit .m { font-family: var(--mono); font-size: 11px; color: var(--fg-dim); margin-top: 3px; overflow-wrap: anywhere; }
+  .hit.win .t { font-weight: 600; }
+  .col.kw   .hit.win .t::after { content: " ▲"; color: var(--kw); }
+  .col.vec  .hit.win .t::after { content: " ●"; color: var(--vec); }
+  .col.fuse .hit.win .t::after { content: " ★"; color: var(--fuse); }
+  .col .empty { color: var(--fg-dimmer); font-size: 13px; font-style: italic; padding: 14px 0; }
+  .src { font-family: var(--mono); font-size: 10.5px; margin-right: 5px; }
+  .src.kw  { color: var(--kw); }
+  .src.vec { color: var(--vec); }
+  .src.none { color: var(--fg-dimmer); text-decoration: line-through; }
+
+  .model-status {
+    padding: 10px 14px;
+    background: var(--bg-3);
+    border-radius: 8px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--fg-dim);
+    margin-top: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .status-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--fg-dimmer); flex-shrink: 0; }
+  .status-dot.loading { background: var(--warn); animation: pulse 1.4s infinite; }
+  .status-dot.ready { background: var(--good); }
+  .status-dot.error { background: var(--bad); }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+  /* ── §6 reranking ─────────────────────────────────────── */
+  .rerank {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  @media (max-width: 720px) { .rerank { grid-template-columns: 1fr; } }
+  .move { font-family: var(--mono); font-size: 11px; margin-left: 6px; }
+  .move.up { color: var(--good); }
+  .move.down { color: var(--bad); }
+  .move.same { color: var(--fg-dimmer); }
+
+  /* ── §7 rag ───────────────────────────────────────────── */
+  .prompt-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 18px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    overflow-x: auto;
+    max-height: 460px;
+    overflow-y: auto;
+  }
+  .prompt-box .sys { color: var(--accent-2); }
+  .prompt-box .ctx { color: var(--good); }
+  .prompt-box .q { color: var(--warn); }
+  .prompt-box .lbl { color: var(--fg-dimmer); }
+
+  .grid-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 14px;
+    margin-top: 20px;
+  }
+  .mini {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .mini h4 { color: var(--accent-3); font-family: var(--mono); font-size: 14px; }
+  .mini p { font-size: 13.5px; color: var(--fg-dim); margin: 0; }
+
+  .takeaways { counter-reset: t; list-style: none; padding: 0; max-width: 760px; }
+  .takeaways li {
+    counter-increment: t;
+    position: relative;
+    padding-left: 40px;
+    margin-bottom: 16px;
+    color: var(--fg-dim);
+  }
+  .takeaways li::before {
+    content: counter(t);
+    position: absolute;
+    left: 0; top: 1px;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  footer {
+    padding: 40px 0 60px;
+    color: var(--fg-dimmer);
+    font-size: 13px;
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+
+  .kb-back {
+    border-bottom: 1px solid var(--border);
+    padding: 14px 24px;
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  .kb-back a { color: var(--fg-dimmer); text-decoration: none; transition: color 0.15s; }
+  .kb-back a:hover { color: var(--accent); }
+  .kb-back .arr { color: var(--accent); margin-right: 6px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-core.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-clike.min.js" defer></script>
+<!-- prism-java MUST come before prism-scala: the Scala grammar is an extension of Java
+     and silently fails to register if Java is missing. -->
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-java.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-scala.min.js" defer></script>
+</head>
+<body>
+
+<nav class="kb-back"><a href="/"><span class="arr">←</span>aaabramov / knowledge base</a></nav>
+
+<!-- ═══ HERO ═══ -->
+<header>
+  <div class="container">
+    <h1>Semantic search<br/>from scratch.</h1>
+    <p class="tagline">
+      Everything between an embedding and a search system that actually works —
+      chunking, indexing, brute force, hybrid retrieval, reranking, and the ten lines
+      of string concatenation that people call RAG.
+    </p>
+    <div class="hero-meta">
+      <span>sequel to “Embeddings, visually”</span>
+      <span>every number from a real all-MiniLM-L6-v2 run</span>
+      <span>Scala 3 · runs in your browser</span>
+    </div>
+  </div>
+</header>
+
+<!-- ═══ 1 ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">01 · Where the last tutorial left off</div>
+    <h2>Ten sentences, ranked by brute force.</h2>
+    <p class="lede">
+      <a href="/tutorials/embeddings/">Embeddings, visually</a> ends with a working search engine:
+      embed ten hard-coded sentences, embed the query, compute cosine similarity against all ten,
+      sort. That is genuinely the whole idea, and for ten sentences it is also the whole system.
+    </p>
+
+    <p>
+      Then you point it at a real corpus and every one of those simplifications turns into a
+      decision you have to make. Your documents are not sentences — they are 40-page PDFs that
+      have to be cut up somehow. There are not ten of them, there are a hundred thousand, and an
+      <code>O(n)</code> scan per keystroke stops being free. And your users do not type tidy
+      paraphrases; they type <code>E020</code>, and <code>M8100</code>, and
+      <em>“lever goes soft after a while”</em>.
+    </p>
+
+    <div class="callout">
+      <strong>This page assumes you already know what an embedding is</strong>, what cosine
+      similarity measures, and that similar meanings land near each other. If any of that is
+      shaky, read <a href="/tutorials/embeddings/">the previous tutorial</a> first — it is a
+      twenty-minute detour and nothing here will make sense without it.
+    </div>
+
+    <h3>The five gaps this page closes</h3>
+    <ol>
+      <li><strong>Chunking.</strong> A document is not a unit of retrieval. Cutting it up badly
+        loses the answer before search even begins — and it is the single highest-leverage
+        decision in the pipeline.</li>
+      <li><strong>What a vector store actually holds.</strong> Vectors are the least interesting
+        part of it.</li>
+      <li><strong>When brute force stops working</strong> — and the honest answer to “do I need a
+        vector database?”, which is usually no.</li>
+      <li><strong>Hybrid search.</strong> Embeddings cannot retrieve a part number. Keyword search
+        cannot retrieve a paraphrase. You need both, and a principled way to merge two ranked
+        lists that have no comparable scores.</li>
+      <li><strong>Reranking and RAG.</strong> Cheap-and-approximate first, expensive-and-precise
+        second; then paste the winners into a prompt.</li>
+    </ol>
+
+    <div class="callout good">
+      <strong>Everything below runs against one corpus:</strong> 26 short support articles from a
+      bicycle workshop. Every similarity score, every rank, and every cross-encoder logit on this
+      page was produced by really running <code>all-MiniLM-L6-v2</code> (and
+      <code>ms-marco-MiniLM-L-6-v2</code>) over that corpus and baking the output in. Nothing here
+      is illustrative-but-invented — including the places where the models get it wrong.
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 2 ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">02 · Chunking</div>
+    <h2>The least glamorous decision, and the one that decides everything.</h2>
+    <p class="lede">
+      An embedding model turns a passage into one fixed-length vector. Give it a whole page and
+      you get the average of every idea on that page — a vector that is a little bit about
+      everything and precisely about nothing. Give it a fragment and you get a sharp vector that
+      may not contain the answer at all.
+    </p>
+
+    <p>
+      Below is a real support article and a real question. Move the sliders and watch what
+      survives. The dashed green outline marks the span that actually answers the question;
+      alternating bright and faint bands show the chunk boundaries; amber shows text that appears in two
+      chunks because of overlap.
+    </p>
+
+    <div class="card">
+      <div class="btn-row">
+        <button class="ghost" data-chunk-preset="16,0">Chunks too small</button>
+        <button class="ghost" data-chunk-preset="40,0">Answer on a boundary</button>
+        <button class="ghost" data-chunk-preset="40,20">Overlap rescues it</button>
+        <button class="ghost" data-chunk-preset="100,0">Chunks too large</button>
+      </div>
+
+      <div class="controls">
+        <span class="ctl-label">chunk size</span>
+        <div class="grow"><input type="range" id="ck-size" min="12" max="120" step="4" value="40" /></div>
+        <span class="ctl-value" id="ck-size-v">40 words</span>
+      </div>
+      <div class="controls">
+        <span class="ctl-label">overlap</span>
+        <div class="grow"><input type="range" id="ck-ov" min="0" max="60" step="2" value="0" /></div>
+        <span class="ctl-value" id="ck-ov-v">0 words</span>
+      </div>
+
+      <div class="chunk-key">
+        <span><i class="c0" style="background:rgba(122,162,247,0.22);box-shadow:0 -2px 0 0 var(--accent) inset">&nbsp;&nbsp;</i>chunk n</span>
+        <span><i class="c1" style="background:rgba(122,162,247,0.05);box-shadow:0 -2px 0 0 var(--fg-dimmer) inset">&nbsp;&nbsp;</i>chunk n+1</span>
+        <span><i class="ov" style="background:rgba(224,175,104,0.22)">&nbsp;&nbsp;</i>in both (overlap)</span>
+        <span><i class="ans" style="outline:1px dashed var(--good)">&nbsp;&nbsp;</i>answers the question</span>
+      </div>
+
+      <div class="chunk-doc" id="ck-doc"></div>
+
+      <p style="font-size:14px;color:var(--fg-dim);margin-bottom:14px">
+        <strong style="color:var(--fg)">The question:</strong>
+        “How much sealant does a 29-inch tyre need, and how often should I top it up?”
+      </p>
+
+      <div class="verdict" id="ck-stats"></div>
+      <div class="diagnosis" id="ck-diag"></div>
+    </div>
+
+    <h3>The three failure modes, in one sentence each</h3>
+    <ul>
+      <li><strong>Too large</strong> — the answer is in there, but it is 23 words out of 100. The
+        chunk’s vector is dominated by rim tape and valve cores, so the chunk ranks lower for the
+        sealant question than it deserves to, and the language model has to find the needle
+        itself.</li>
+      <li><strong>Too small</strong> — the answer is 23 words long and a 16-word chunk physically
+        cannot hold it. No retrieval strategy on earth recovers a fact that was destroyed at
+        ingest time.</li>
+      <li><strong>The boundary</strong> — the worst one, because it is invisible. With 40-word
+        chunks and no overlap the answer straddles a cut. Both halves score mediocrely, neither
+        is complete, and nothing in your logs tells you this happened.</li>
+    </ul>
+
+    <div class="callout warn">
+      <strong>Overlap is insurance, not a fix.</strong> It costs you storage and duplicate hits
+      proportional to the overlap fraction; 10–20 % is the usual setting. It buys you protection
+      against a cut landing in the middle of an answer. It does not help at all if your chunks are
+      too small to hold an answer in the first place — check that first.
+    </div>
+
+    <p>
+      Fixed-size word windows are the crudest strategy and the right default. Better ones split on
+      structure — Markdown headings, HTML sections, function definitions — so a chunk is a thing
+      that means something on its own. Whatever you pick, store the source document id and the
+      ordinal with each chunk, because you will want to show the user where an answer came from
+      and to stitch neighbouring chunks back together at read time.
+    </p>
+  </div>
+</section>
+
+<!-- ═══ 3 ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">03 · What a vector store actually holds</div>
+    <h2>Vectors, metadata, and an index over the vectors.</h2>
+    <p class="lede">
+      A vector database is not exotic. It is a table of rows with a float array column and a
+      specialised index on that column. If you can picture Postgres with an extra index type,
+      you have the right picture — which is exactly why <code>pgvector</code> exists and is
+      usually enough.
+    </p>
+
+    <p>Three things live in a row, and only one of them is the embedding:</p>
+    <ul>
+      <li><strong>The vector</strong> — 384 <code>float32</code>s here, 1536 for OpenAI’s
+        <code>text-embedding-3-small</code>. 1.5 KB and 6 KB per chunk respectively.</li>
+      <li><strong>The payload and metadata</strong> — the chunk text itself (you need it back to
+        show the user and to feed a language model), plus source id, ordinal, timestamps, tenant,
+        permissions. Filtering on metadata is what turns a demo into a product.</li>
+      <li><strong>The index</strong> — a structure that answers “nearest neighbours of this
+        vector” without touching every row. This is the only genuinely new machinery, and
+        §4 is about when you actually need it.</li>
+    </ul>
+
+    <pre><code class="language-scala">final case class Chunk(
+    id:       String,
+    docId:    String,
+    ordinal:  Int,
+    text:     String,
+    metadata: Map[String, String]
+)
+
+final case class Indexed(chunk: Chunk, vector: Array[Float])
+
+trait VectorStore:
+  def upsert(batch: Seq[Indexed]): Unit
+  def search(query: Array[Float], k: Int, filter: Map[String, String] = Map.empty)
+      : Seq[(Chunk, Float)]
+
+/** Ingest is three steps and a batch size. The batch size is not decoration —
+  * embedding one string at a time is the classic way to make ingest 40x slower. */
+def ingest(
+    docs:  Seq[Document],
+    store: VectorStore,
+    embed: Seq[String] =&gt; Seq[Array[Float]]
+): Unit =
+  docs
+    .flatMap(chunk(size = 40, overlap = 8))
+    .grouped(64)
+    .foreach: batch =&gt;
+      val vectors = embed(batch.map(_.text))
+      store.upsert(batch.lazyZip(vectors).map(Indexed.apply))</code></pre>
+
+    <div class="callout">
+      <strong>Write down the model name next to the vectors.</strong> Embeddings from two
+      different models are not comparable, and neither are embeddings from two versions of the
+      same model. The day you upgrade the encoder you have to re-embed the entire corpus, and the
+      only thing that makes that survivable is knowing exactly which rows were produced by what.
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 4 ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">04 · Brute force, and when it stops working</div>
+    <h2>You almost certainly do not need a vector index.</h2>
+    <p class="lede">
+      Exact search is a dot product per document, and dot products are the thing computers are
+      best at. The interesting question is not “is <code>O(n)</code> slow?” but “at what
+      <code>n</code> does it start to matter for my latency budget?”
+    </p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Corpus (chunks)</th><th>Vectors in RAM</th><th>One exact scan</th><th>Verdict</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="num">1 000</td><td class="num">1.5 MB</td><td class="num">~0.15 ms</td><td>An array and a sort. Anything else is overhead.</td></tr>
+          <tr><td class="num">10 000</td><td class="num">15 MB</td><td class="num">~1.5 ms</td><td>Still an array. Still not a database.</td></tr>
+          <tr><td class="num">100 000</td><td class="num">154 MB</td><td class="num">~15 ms</td><td>Fine inside a request. This is where people start reaching for a vector DB — mostly they do not need to yet.</td></tr>
+          <tr><td class="num">1 000 000</td><td class="num">1.5 GB</td><td class="num">~150 ms</td><td>Now it hurts, and it hurts once per query per core.</td></tr>
+          <tr><td class="num">10 000 000</td><td class="num">15 GB</td><td class="num">~1.5 s</td><td>An index is no longer optional.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p style="font-size:14px;color:var(--fg-dimmer)">
+      Cost model, not a benchmark: 384 <code>float32</code> dimensions = 1 536 bytes per vector,
+      streamed from RAM at ~10 GB/s on one core, which is where a normalised dot product is
+      bottlenecked. Your numbers will differ by a factor of a few; the shape of the table will
+      not.
+    </p>
+
+    <h3>What an ANN index buys, and what it costs</h3>
+    <p>
+      Approximate nearest neighbour search trades exactness for time. <strong>HNSW</strong>, the
+      one you will meet in practice, builds a layered graph over the vectors: sparse long-range
+      links at the top for coarse navigation, dense short-range links at the bottom for the final
+      approach. A query greedily walks downhill from an entry point, so it touches a few hundred
+      vectors instead of ten million — <code>O(log n)</code>-ish instead of <code>O(n)</code>.
+    </p>
+    <p>
+      The cost is that it is <em>approximate</em>. Some true nearest neighbours are missed, and the
+      knob that controls how many is a search-effort parameter (<code>efSearch</code>): raise it
+      and recall climbs toward 100 % while latency climbs with it. The other costs are less
+      discussed and bite harder — the graph must be held in memory alongside the vectors,
+      building it is expensive, deletes are awkward, and metadata filtering interacts badly with
+      graph traversal, because the neighbours you are allowed to return may not be reachable from
+      the ones you are walking through.
+    </p>
+
+    <div class="callout good">
+      <strong>The honest rule of thumb:</strong> under ~100 k chunks, do an exact scan over a
+      float array and spend the saved complexity budget on §2 and §5 instead. Chunking and hybrid
+      retrieval will move your result quality far more than the difference between exact and
+      approximate ever will.
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 5 ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">05 · Hybrid search</div>
+    <h2>Neither strategy is good enough. Together they are.</h2>
+    <p class="lede">
+      Keyword search cannot retrieve a paraphrase. Vector search cannot retrieve a part number.
+      This is not a tuning problem — the two failure modes are structural, and each is exactly
+      where the other one is strong. Run both, then merge the ranked lists.
+    </p>
+
+    <p>
+      Pick a query. All three columns are computed live in your browser from the baked
+      <code>all-MiniLM-L6-v2</code> vectors and a real BM25 index over the same 26 documents.
+    </p>
+
+    <div class="card">
+      <div class="btn-row" id="hs-presets"></div>
+      <div class="controls">
+        <div class="grow"><input type="text" id="hs-free" placeholder="…or type your own query (needs the real model)" disabled /></div>
+        <button id="hs-load">Load the real model (~25 MB)</button>
+      </div>
+      <p id="hs-caption" style="font-size:14px;color:var(--fg-dim);margin:0 0 16px"></p>
+      <div class="cols" id="hs-cols"></div>
+      <div class="model-status" id="hs-status">
+        <span class="status-dot" id="hs-dot"></span>
+        <span id="hs-msg">Preset queries use vectors computed ahead of time — no download needed. Load the model to embed your own text.</span>
+      </div>
+    </div>
+
+    <h3>BM25, properly</h3>
+    <p>
+      The keyword column is BM25 with <code>k1 = 1.2</code> and <code>b = 0.75</code>, not term
+      counting. Two ideas do all the work. <strong>Saturation</strong>: the tenth occurrence of a
+      word tells you far less than the second, so term frequency is fed through
+      <code>f / (f + k1)</code> rather than used raw. <strong>Length normalisation</strong>: a
+      match inside a 40-word document is stronger evidence than the same match inside a 400-word
+      one, and <code>b</code> controls how hard that is penalised. Multiply by inverse document
+      frequency and a rare token like <code>E020</code> outweighs fifty occurrences of
+      <em>brake</em>.
+    </p>
+
+    <pre><code class="language-scala">final class Bm25(docs: Vector[Vector[String]], k1: Double = 1.2, b: Double = 0.75):
+  private val n     = docs.size
+  private val avgdl = docs.map(_.size).sum.toDouble / n
+  private val df    = docs.flatMap(_.distinct).groupMapReduce(identity)(_ =&gt; 1)(_ + _)
+
+  private def idf(term: String): Double =
+    val d = df.getOrElse(term, 0)
+    math.log(1 + (n - d + 0.5) / (d + 0.5))
+
+  def score(query: Seq[String], doc: Int): Double =
+    val tokens = docs(doc)
+    val tf     = tokens.groupMapReduce(identity)(_ =&gt; 1)(_ + _)
+    query.foldLeft(0.0): (acc, term) =&gt;
+      tf.getOrElse(term, 0) match
+        case 0 =&gt; acc
+        case f =&gt;
+          val norm = 1 - b + b * tokens.size / avgdl
+          acc + idf(term) * (f * (k1 + 1)) / (f + k1 * norm)</code></pre>
+
+    <h3>Reciprocal Rank Fusion, and why not just add the scores</h3>
+    <p>
+      A BM25 score of 3.97 and a cosine similarity of 0.43 are not on the same scale, are not
+      bounded the same way, and do not move together. Normalising them into a common range sounds
+      reasonable and behaves badly: min-max normalisation makes every score depend on the worst
+      result in the list, so adding one irrelevant document silently rescores everything else.
+    </p>
+    <p>
+      RRF sidesteps the problem by <strong>throwing the scores away and keeping only the ranks</strong>.
+      Each list contributes <code>1 / (k + rank)</code> with <code>k = 60</code>, and the
+      contributions are summed. The large constant flattens the curve, so the difference between
+      rank 1 and rank 2 is small (0.01639 vs 0.01613) while the difference between
+      “appears in both lists” and “appears in one” is large. That is the whole trick: RRF rewards
+      <em>agreement between retrievers</em> rather than confidence within one of them.
+    </p>
+
+    <pre><code class="language-scala">/** Reciprocal Rank Fusion. Input: one ranked id list per retriever,
+  * already truncated to top-k. Output: one merged ranking.
+  * Note what is missing — the retrievers' own scores never appear. */
+def rrf(lists: Seq[Seq[String]], k: Int = 60): Seq[(String, Double)] =
+  lists
+    .flatMap(_.zipWithIndex.map((id, i) =&gt; id -&gt; 1.0 / (k + i + 1)))
+    .groupMapReduce(_._1)(_._2)(_ + _)
+    .toSeq
+    .sortBy(-_._2)</code></pre>
+
+    <div class="callout">
+      <strong>Fusion is not magic, and the demo shows it.</strong> On
+      <code>my bike has a puncture</code> the keyword list is empty, so RRF just reproduces the
+      vector ranking — there is nothing to fuse. Fusion earns its keep in the third case, where
+      the right document sits near the top of both lists and first in neither: two retrievers
+      agreeing at ranks 3 and 2 (0.01587 + 0.01613 = 0.03200) beats one retriever shouting at
+      rank 1 (0.01639).
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 6 ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">06 · Reranking</div>
+    <h2>Retrieve 50 cheaply, then reorder 50 expensively.</h2>
+    <p class="lede">
+      Everything so far used a <strong>bi-encoder</strong>: the query and the document are
+      embedded separately and compared with a dot product. That separation is what makes it fast —
+      document vectors are computed once at ingest — and it is also what limits it. The document
+      vector was produced without ever seeing the query.
+    </p>
+    <p>
+      A <strong>cross-encoder</strong> gives up the separation. It feeds the pair
+      <code>[query] [SEP] [document]</code> through a transformer together and outputs one
+      relevance score, so every attention layer can compare the two texts word by word. It is far
+      more accurate and completely unusable as a search index: nothing can be precomputed, so
+      scoring a 100 000-document corpus means 100 000 forward passes per query.
+    </p>
+    <p>
+      Hence the two-stage pattern. The bi-encoder narrows a hundred thousand candidates to fifty;
+      the cross-encoder reorders those fifty. Below, both columns are real:
+      <code>all-MiniLM-L6-v2</code> on the left, <code>ms-marco-MiniLM-L-6-v2</code> logits on the
+      right, over the same corpus.
+    </p>
+
+    <div class="card">
+      <div class="btn-row" id="rr-presets"></div>
+      <div class="rerank">
+        <div class="col vec">
+          <div class="col-head"><span><span class="glyph">●</span>Bi-encoder</span><span class="sub">cosine · precomputed</span></div>
+          <div id="rr-before"></div>
+        </div>
+        <div class="col fuse">
+          <div class="col-head"><span><span class="glyph">★</span>Cross-encoder</span><span class="sub">logit · query-aware</span></div>
+          <div id="rr-after"></div>
+        </div>
+      </div>
+      <div class="verdict" id="rr-cost" style="margin-top:16px"></div>
+      <div class="diagnosis" id="rr-note"></div>
+    </div>
+
+    <div class="callout warn">
+      <strong>Rerankers are not free wins.</strong> The third preset is there on purpose: on
+      <code>my bike has a puncture</code> the cross-encoder scores every document as irrelevant
+      and shuffles the correct answer <em>down</em>. Cross-encoders are trained on a particular
+      query distribution — MS MARCO is web search queries — and a terse conversational complaint
+      is off-distribution for it. Measure your reranker on your own queries before you pay 50
+      forward passes per search for it.
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 7 ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">07 · RAG, demystified</div>
+    <h2>Retrieval-augmented generation is a string template.</h2>
+    <p class="lede">
+      RAG has an intimidating name and an anticlimactic implementation: retrieve the top few
+      chunks, paste them into a prompt above the user’s question, send it to a language model.
+      That is the entire architecture. Every hard part of it is in sections 2 to 6.
+    </p>
+
+    <div class="card">
+      <p style="font-size:14px;color:var(--fg-dim);margin-bottom:14px">
+        <strong style="color:var(--fg)">Question:</strong>
+        “how much sealant do I need for a 29 inch tyre” — retrieved by RRF over the real corpus.
+        Slide to change how many chunks get pasted in.
+      </p>
+      <div class="controls">
+        <span class="ctl-label">top-k chunks</span>
+        <div class="grow"><input type="range" id="rag-k" min="1" max="5" step="1" value="3" /></div>
+        <span class="ctl-value" id="rag-k-v">3</span>
+      </div>
+      <div class="prompt-box" id="rag-prompt"></div>
+      <div class="verdict" id="rag-stats" style="margin-top:14px"></div>
+    </div>
+
+    <pre><code class="language-scala">def buildPrompt(question: String, hits: Seq[Chunk]): String =
+  val context = hits.zipWithIndex
+    .map((c, i) =&gt; s"[${i + 1}] ${c.metadata("title")}\n${c.text}")
+    .mkString("\n\n")
+
+  s"""|Answer the question using only the context below.
+      |Cite the numbered source you used. If the context does not
+      |contain the answer, say that you do not know.
+      |
+      |Context:
+      |$context
+      |
+      |Question: $question
+      |Answer:""".stripMargin</code></pre>
+
+    <p>
+      Turning up <code>k</code> feels like it should help and mostly does not. More chunks means
+      more tokens, more latency, more cost, and a longer haystack for the model to lose the needle
+      in — the “lost in the middle” effect is real and well documented. Three to five good chunks
+      beats twenty mediocre ones every time, which is another way of saying that RAG quality is
+      retrieval quality.
+    </p>
+
+    <div class="callout">
+      <strong>The two instructions that matter</strong> are both in the template above:
+      <em>use only the context</em>, and <em>say when you do not know</em>. Without them the model
+      happily answers from its own memory, and you have built an expensive way to make things up
+      with citations attached.
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 8 ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">08 · What to actually build</div>
+    <h2>A decision guide, by corpus size.</h2>
+    <p class="lede">
+      Almost every retrieval system is over-engineered in the index and under-engineered in the
+      chunker. Start at the top of this list and only move down when something measurably hurts.
+    </p>
+
+    <div class="grid-cards">
+      <div class="mini">
+        <h4>&lt; 10 000 chunks</h4>
+        <p>A float array in memory, an exact scan, and BM25 from a library. No database, no index,
+          no service. This covers most internal tools and every prototype.</p>
+      </div>
+      <div class="mini">
+        <h4>10 k – 1 M chunks</h4>
+        <p>Postgres with <code>pgvector</code> — you get transactions, metadata filters, joins and
+          backups you already know how to operate, plus HNSW when you want it.</p>
+      </div>
+      <div class="mini">
+        <h4>&gt; 1 M chunks</h4>
+        <p>Now a dedicated engine earns its operational cost: Qdrant, Weaviate, Vespa, or
+          OpenSearch if you also want BM25 and vectors in one query.</p>
+      </div>
+      <div class="mini">
+        <h4>Any size, always</h4>
+        <p>Hybrid retrieval with RRF. It is thirty lines, it needs no tuning, and it fixes the
+          entire class of “why can’t it find the part number” bugs.</p>
+      </div>
+      <div class="mini">
+        <h4>Add a reranker when…</h4>
+        <p>…recall@50 is good but precision@3 is not — the right answer is in the candidates but
+          not at the top. Measure that before you add the latency.</p>
+      </div>
+      <div class="mini">
+        <h4>Build the eval set first</h4>
+        <p>Thirty real queries with known-correct documents. Without it every change to this
+          pipeline is a vibe, and you will not notice a regression until a user does.</p>
+      </div>
+    </div>
+
+    <h3>What to remember</h3>
+    <ol class="takeaways">
+      <li>Chunking decides the ceiling. Nothing downstream recovers an answer that was cut in half
+        at ingest time.</li>
+      <li>Exact search is fine to about 100 k chunks. Approximate indexes solve a problem you
+        probably do not have yet.</li>
+      <li>Keyword and vector search fail in opposite directions. Running both and fusing the ranks
+        costs almost nothing and removes a whole category of failure.</li>
+      <li>RRF works because it ignores scores. Never sum a BM25 score and a cosine similarity.</li>
+      <li>A reranker is a precision tool with a real latency bill and a real distribution
+        assumption — verify it helps on <em>your</em> queries.</li>
+      <li>RAG is retrieval plus string concatenation. If the answers are bad, the retrieval is
+        bad.</li>
+    </ol>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    Sequel to <a href="/tutorials/embeddings/">Embeddings, visually</a>.
+    Corpus vectors precomputed with <code style="color:var(--accent)">@xenova/transformers 2.17.2</code>
+    running <code style="color:var(--accent)">Xenova/all-MiniLM-L6-v2</code>, mean-pooled and
+    L2-normalised, rounded to 3 decimals; reranker logits from
+    <code style="color:var(--accent)">Xenova/ms-marco-MiniLM-L-6-v2</code>. Load the model in §5 and
+    everything runs locally in your browser — your text never leaves your machine.
+  </div>
+</footer>
+
+<script type="module">
+/* eslint-disable */
+
+// ════════════════════════════════════════════════════════════════════
+// BAKED DATA — real model output. See the footer for provenance.
+// ════════════════════════════════════════════════════════════════════
+const DOCS = [
+  { id: "kb-101", title: "How to fix a flat tire",
+    body: "A tyre that keeps going soft has a hole in the inner tube. Lever the casing off the rim, pull the tube out, inflate it and listen for escaping air until you find the leak. Patch it or fit a spare, then run a finger around the inside of the casing to find the thorn or shard of glass that made the hole." },
+  { id: "kb-102", title: "Rear derailleur B-tension and indexing, 12-speed XT",
+    body: "Set the B-tension gap on the XT M8100 to 6 mm measured at the largest sprocket, then turn the barrel adjuster until the chain steps cleanly one cog at a time. The M8100 cage is sold in SGS long-cage form only; a 51-tooth cassette will not clear anything shorter." },
+  { id: "kb-103", title: "Shimano 12-speed compatibility: M7100, M8100 and M9100",
+    body: "The SLX M7100 shifter pairs with XT and XTR derailleurs, but not with any 11-speed Hyperglide cassette. A Micro Spline freehub body is mandatory; order part number FH-M7100-B for a 148 mm Boost rear hub." },
+  { id: "kb-104", title: "Bosch Performance Line CX error code E020",
+    body: "E020 means the drive unit cannot talk to the display. Reseat the connector at the motor, inspect it for a bent pin, and flash the latest firmware with the Bosch diagnostic tool. If the code returns immediately the wiring harness is almost always the culprit." },
+  { id: "kb-105", title: "Error code E013 on an ebike battery",
+    body: "E013 is a battery fault reported by the drive unit. Charge the pack to full and re-pair it with the controller. A pack that throws E013 below five degrees Celsius is usually just cold, so warm it to room temperature before condemning it." },
+  { id: "kb-106", title: "Disc brakes howling and screeching in the rain",
+    body: "A loud noise from the rotor after a damp ride is nearly always contamination or glazing. Sand the pads lightly, clean the rotor with isopropyl alcohol, and bed them in again with twenty hard stops from walking pace. Rain makes an already-glazed surface sing." },
+  { id: "kb-107", title: "Rim brake pad toe-in adjustment",
+    body: "A pad that meets the rim dead flat will chatter against the braking surface. Loosen the fixing bolt and rotate the shoe so its leading edge touches about a millimetre before the trailing edge, then retighten to 6 Nm and check the pad clears the tyre." },
+  { id: "kb-108", title: "What to check after riding in the wet",
+    body: "Wet rides push grit into every bearing. Rinse the frame with low-pressure water, dry the chain and relubricate it, and wipe the fork stanchions clean. Spin each wheel and listen for a dragging noise before you put it away." },
+  { id: "kb-109", title: "Bleeding hydraulic disc brakes",
+    body: "Mount the frame level, fit the bleed cup at the lever and the syringe at the caliper, then push mineral oil upward so air rises out of the system. A lever that pulls to the bar after bleeding usually still has a bubble trapped behind the piston seals." },
+  { id: "kb-110", title: "Measuring chain wear before it ruins the cassette",
+    body: "Drop a chain checker into the links: at 0.5 percent elongation replace the chain, at 0.75 percent replace the cassette with it. A worn chain hooks the sprocket teeth and the damage transfers to every new chain you fit afterwards." },
+  { id: "kb-111", title: "Truing a wobbly wheel",
+    body: "Spin the wheel in the frame and mark where the rim swings toward one side. Tighten the spokes on the opposite flange a quarter turn at a time and loosen their neighbours by the same amount. Work in small increments and re-check the dish at the end." },
+  { id: "kb-112", title: "Tracking down a creak from the bottom bracket",
+    body: "Most creaks blamed on the bottom bracket come from the pedals, the seatpost clamp or a dry chainring bolt. Strip, degrease and grease each interface in turn, torque everything to spec, and ride between steps so you know which one silenced it." },
+  { id: "kb-113", title: "Setting up tubeless tyres and sealant volume",
+    body: "Seat the bead with a burst of air from a tank pump before adding liquid. A 29 by 2.4 inch tyre takes 120 ml of sealant. Top it up every three to four months, sooner in hot weather, because the latex dries out and stops sealing small holes." },
+  { id: "kb-114", title: "Torque specifications for common fasteners",
+    body: "Stem faceplate bolts 5 Nm, seatpost clamp 6 Nm, disc rotor Torx bolts 6 Nm, cassette lockring 40 Nm, crank preload cap 1 Nm. Carbon parts are ruined by overtightening far more often than they fail from being loose, so use a calibrated wrench." },
+  { id: "kb-115", title: "Adjusting a loose headset",
+    body: "Hold the front brake and rock the frame forward: a knock you can feel through the fork crown means play in the headset. Loosen the stem clamp bolts, snug the top cap until the knock disappears, straighten the bars and retighten the stem." },
+  { id: "kb-116", title: "Dropper post service and sticky return",
+    body: "A post that returns slowly is usually short of air or full of dirt. Clean and grease the stanchion, check the cartridge pressure against the manufacturer figure, and make sure the cable housing is not binding where it enters the frame." },
+  { id: "kb-117", title: "RockShox Pike lower leg service",
+    body: "Every fifty hours drop the lowers, wipe out the old bath oil and refill with 10 ml of 0W-30 per leg. Replace the dust wipers if the foam rings crumble. A fork that feels sticky off the top is nearly always dry rather than damaged." },
+  { id: "kb-118", title: "Looking after an ebike battery pack",
+    body: "Store the pack between 30 and 60 percent charge in a dry room above freezing. Charge it indoors, never straight after a ride while the cells are hot, and top it up once a month over the winter so it never sits fully empty." },
+  { id: "kb-119", title: "Removing a cassette: the tools you need",
+    body: "You need a chain whip, an adjustable wrench and the correct lockring splined tool. Shimano Hyperglide and Micro Spline both use TL-LR15; SRAM XD needs its own driver. Fit the tool fully before leaning on the wrench or you will round the splines." },
+  { id: "kb-120", title: "Ghost shifting and jumping gears under load",
+    body: "Gears that change on their own are usually a cable problem, not a derailleur problem. Check for a frayed strand at the shifter, run fresh housing, and confirm the hanger is straight with an alignment gauge before you touch the limit screws." },
+  { id: "kb-121", title: "Finding the right saddle height",
+    body: "Sit on the saddle with your heel on the pedal at the bottom of the stroke: your leg should be just straight. Move in five millimetre steps and give each change a week. Pain at the front of the knee usually means the saddle is too low." },
+  { id: "kb-122", title: "Storing a bicycle over the winter",
+    body: "Wash and dry the frame, lubricate the chain heavily to keep rust off, and hang the bicycle so the tyres are off the ground. Drop the pressure to about half, and if it lives in a shed take the battery indoors." },
+  { id: "kb-123", title: "Cleaning and lubricating a drivetrain",
+    body: "Degrease the chain, rinse, dry it completely, then put one drop of lubricant on each roller and wipe the outside clean. Wet lube for winter, dry lube for dust. Lubricant left on the outer plates only collects grit and grinds the chain away faster." },
+  { id: "kb-124", title: "A rotor that rubs and scrapes once per wheel revolution",
+    body: "A rhythmic scraping in time with the wheel means the rotor is touching a pad. Sight down the caliper, slacken its two mounting bolts, squeeze the lever hard and retighten while the caliper self-centres. A bent rotor needs a truing fork instead." },
+  { id: "kb-125", title: "Warranty: noise complaints and wear parts",
+    body: "Brake pads, chains, tyres and cables are wear parts and are not covered. Brakes that squeal are a setup and contamination issue, not a manufacturing defect, and riding in the wet wears pads faster. We will still look at anything that fails inside the first month." },
+  { id: "kb-126", title: "A quick guide to the noises a bicycle makes",
+    body: "Squealing under braking points at the pads. A rhythmic scrape once per revolution is the rotor. A creak that follows your pedalling is a bearing or a bolted interface. A tick from the back that changes with the gears is the chain meeting a worn sprocket." },
+];
+
+// Real all-MiniLM-L6-v2 embeddings (mean-pooled, L2-normalised, rounded to 3 dp).
+// Generated by scratchpad/generate-vectors.mjs with @xenova/transformers@2.17.2.
+const DOC_VECS = [
+  /* kb-101 */ [-0.01,0.001,0.003,0.01,-0.002,-0.08,0.003,0.067,-0.014,0.025,-0.061,0.038,-0.037,0.027,0,0.004,-0.137,0.069,-0.008,-0.055,0.016,0.016,0.049,0.021,-0.025,-0.007,0.148,0.006,-0.017,-0.063,-0.063,0.057,-0.065,-0.036,0.048,0.021,0.005,0.089,0.052,-0.068,0.057,-0.043,0.007,0.02,0.046,-0.051,-0.009,0.03,0.064,0.051,0.002,-0.078,-0.008,0.015,-0.014,-0.026,-0.073,0.078,0.067,-0.025,0.143,-0.075,0.029,0.026,-0.039,-0.023,0.116,-0.065,-0.009,-0.034,0.008,0.002,-0.069,-0.061,0.047,-0.085,0.043,-0.045,0.035,0.147,-0.015,0.021,0.129,0.013,0.015,-0.046,0.041,0.013,-0.016,-0.077,-0.072,-0.014,-0.026,0.004,0.065,-0.006,0.013,-0.017,-0.03,0.078,0.058,-0.056,0.03,0.002,0.016,0.054,-0.02,0.075,-0.017,-0.006,0.004,0.037,0.116,0.01,-0.074,-0.018,-0.033,0.077,-0.063,0.051,-0.062,0.037,-0.026,0.005,0.007,-0.024,-0.02,0,-0.028,0.114,-0.009,-0.02,-0.08,-0.068,0.041,0.023,-0.023,-0.016,0.045,-0.034,-0.027,-0.112,-0.063,-0.032,0.02,0.029,-0.086,-0.032,-0.094,0.033,0.08,-0.052,0.067,-0.016,0.05,-0.006,0.091,0.017,0.047,0.034,0.075,0.099,-0.03,-0.024,-0.024,0.031,-0.002,-0.009,-0.038,0.035,0.045,0.018,-0.015,0.06,-0.051,0.066,0.017,-0.029,0.003,0.018,-0.116,0.036,-0.042,-0.015,0.033,-0.021,-0.13,0.024,0.106,-0.06,0,0.01,-0.064,-0.091,0.006,-0.027,-0.023,-0.054,-0.022,0.081,0.012,-0.009,-0.114,-0.05,0.068,-0.023,-0.035,-0.09,0.01,-0.099,-0.013,-0.029,-0.07,0.015,-0.06,0.02,0.042,-0.012,-0.064,-0.021,-0.028,-0.027,0.043,0,-0.021,0,0.009,0.079,0.045,-0.026,-0.002,-0.046,0.01,-0.036,-0.095,0.029,-0.036,-0.016,-0.001,0.015,0.031,0.003,-0.053,0.093,-0.025,-0.013,-0.008,-0.051,0.025,0.036,-0.04,-0.001,0.018,0.098,0.012,-0.08,-0.024,-0.02,-0.016,0.075,0.059,-0.067,-0.019,-0.049,0.002,0.01,-0.136,-0.066,-0.021,-0.015,0.064,-0.01,-0.037,-0.026,0.073,-0.043,0.049,0.059,-0.011,0.069,-0.022,0.003,-0.074,-0.03,-0.1,0.043,0.004,-0.027,0.038,0.019,-0.045,0,-0.035,0.057,-0.033,0.054,-0.02,0.002,0.068,0.014,-0.049,-0.082,0.005,0.007,0.082,-0.004,0.036,0.013,0.042,-0.017,0.117,-0.008,-0.045,-0.017,0.013,0.031,0.011,0.045,0.029,0,0.027,-0.05,-0.113,0.051,0.028,-0.039,0.056,0.061,-0.031,0.016,-0.147,0.012,0.007,-0.021,0.036,0.031,-0.07,0.133,-0.009,-0.014,-0.029,0.003,0.006,-0.007,0.023,0.034,0.022,-0.032,0.056,0.087,0.025,0.008,0.037,0.014,-0.049,0.029,0.091,0.053,0.012,0.077,0.038,0.074,-0.002,0.007,-0.083,-0.058,0.034,-0.001,-0.015,0.005,0.064,-0.009,-0.009,-0.004,-0.021,-0.049,0.033,-0.026,0.01,0.111,-0.138,0.093,0.032,-0.046],
+  /* kb-102 */ [-0.034,0.068,-0.052,-0.03,-0.037,0.066,-0.006,0.103,-0.088,-0.051,0.067,-0.005,0.021,-0.015,-0.073,0.087,0.008,0.061,0.054,0.029,0.025,0.004,0.049,0.037,-0.12,-0.078,0.042,-0.01,0,-0.1,-0.018,0.044,-0.026,-0.001,0.02,-0.015,0.036,0,0.021,-0.07,0.028,0.033,0.057,-0.037,0.067,0.044,-0.025,0.011,-0.032,0.023,-0.014,0.035,-0.039,0.025,0.074,-0.007,-0.054,-0.027,0.023,-0.057,0.049,0.03,-0.002,0.046,0.05,0.002,0.02,0.04,-0.014,0.081,0.063,-0.054,-0.12,-0.014,0.026,0.034,0.027,0.04,-0.023,0.047,-0.019,-0.046,0.055,-0.008,0.005,-0.087,-0.005,0.021,0.001,-0.002,0.034,-0.007,-0.055,-0.043,0.037,-0.066,0.008,0.033,-0.054,0.033,0.037,-0.058,-0.056,0.162,-0.007,0.035,0.011,0.088,-0.029,-0.058,-0.008,0.028,-0.004,-0.015,0.004,0.013,-0.016,0.015,0.02,-0.014,0,-0.034,-0.081,-0.074,-0.014,0.072,-0.051,0,0.014,-0.019,-0.028,-0.04,-0.025,0.01,-0.004,0.04,0.003,0.041,-0.005,-0.011,-0.081,-0.034,-0.057,-0.176,0.052,0.042,-0.001,-0.091,0.002,-0.027,0.032,-0.086,0.103,0.021,0.081,-0.009,-0.019,0.006,-0.042,0.035,-0.019,0.038,-0.005,-0.02,-0.01,-0.039,0.016,0.005,0.035,-0.021,-0.003,-0.098,-0.064,-0.012,-0.022,-0.014,0.029,0.093,0.042,0.014,-0.074,-0.032,-0.007,-0.053,0.006,-0.031,-0.074,0.067,0.021,0.005,0.001,0.026,0.04,0.015,-0.066,-0.08,0.001,-0.04,-0.061,-0.076,0.142,0.004,0.029,-0.003,-0.08,0.048,-0.032,-0.021,0.048,0.091,-0.035,0.012,-0.017,-0.096,0.059,-0.007,0.076,-0.038,0.034,-0.027,-0.003,0.066,-0.026,0,-0.025,0.04,0.109,0.086,-0.045,-0.035,0.184,0.052,-0.023,0.012,0.014,0.02,-0.023,-0.031,0.035,0.003,0.067,0.027,0.028,-0.061,0.065,0.037,0.018,0.042,0.002,-0.047,0.034,0.037,-0.008,-0.051,-0.08,0.017,0.019,0.047,-0.004,0.034,-0.004,0.126,-0.042,0.032,0.041,0.082,-0.082,0.083,0.011,0.068,0.045,-0.038,0.079,0.03,-0.043,-0.044,0.082,-0.07,0.018,-0.058,-0.066,0.021,0.007,0.041,0.101,0.029,-0.007,-0.07,0.02,-0.036,0.02,-0.087,-0.023,-0.002,0.011,0.044,0.048,-0.008,0.02,-0.052,-0.084,-0.13,0.075,-0.083,0.054,-0.078,0.034,0.044,-0.038,0.03,-0.03,0.073,0.066,-0.04,-0.011,-0.028,0.035,0.002,0.034,0,-0.005,-0.073,-0.008,-0.001,0.008,0,-0.006,-0.05,0.089,-0.083,0.017,-0.037,-0.085,0.059,-0.035,-0.043,-0.066,0.007,-0.008,0.022,-0.032,0.011,0.09,0.016,0.017,-0.038,-0.035,0.083,0.112,0.016,0.049,0.012,-0.06,0.052,-0.013,0.03,-0.064,0.159,0.091,0.051,0.007,-0.071,-0.001,0.065,-0.05,0.008,-0.078,-0.039,-0.096,-0.059,0.101,-0.043,0.015,-0.092,-0.032,-0.028,0.051,0.019,-0.023,-0.011,-0.029,-0.003,-0.035,-0.07],
+  /* kb-103 */ [-0.041,-0.014,-0.032,-0.034,-0.057,0.079,-0.067,0.005,-0.171,-0.045,0.094,-0.037,0.025,-0.006,0.027,0.023,0.095,-0.003,0.091,0.091,0.031,-0.076,-0.034,-0.013,-0.021,-0.06,0.089,0.003,-0.021,-0.038,0.009,0.031,-0.08,-0.018,0.026,-0.033,0.067,-0.076,0.003,0.005,-0.02,-0.009,0.071,-0.087,0.062,-0.005,-0.001,-0.076,-0.075,0.03,-0.072,0.011,-0.056,0.101,0.089,-0.021,-0.067,-0.071,-0.031,-0.116,-0.036,0.004,0.034,-0.051,0.033,-0.032,-0.102,0.003,-0.024,0.053,0.055,-0.043,-0.015,-0.027,-0.036,0.049,0.005,0.107,-0.025,-0.053,-0.003,-0.038,0.006,-0.028,0.081,-0.067,0.002,0.032,-0.026,-0.003,0.058,-0.005,0.048,-0.087,0.036,-0.047,0.002,-0.008,-0.02,0.006,-0.007,0.015,-0.055,0.056,0.022,0.055,0.005,0.039,-0.017,-0.038,0.003,0.028,-0.005,-0.042,-0.016,-0.055,-0.005,0.01,0.007,0.04,-0.03,-0.007,0.001,0.091,0.121,0.022,-0.048,0,0.06,-0.008,0.032,0.004,0.019,0.02,0.002,-0.013,0.04,-0.096,-0.127,-0.008,-0.004,0.025,-0.077,-0.077,0.075,-0.061,0.051,-0.043,0.027,-0.033,-0.013,-0.024,-0.02,0.078,0.045,-0.015,-0.017,0.012,-0.091,-0.018,-0.005,0.001,0.002,0.025,-0.111,-0.065,0.013,-0.024,0.027,-0.022,-0.034,-0.092,-0.054,0.045,-0.001,0.011,0.109,-0.017,0.016,-0.018,-0.108,0.005,0.028,-0.049,0.007,0.089,-0.022,0.099,-0.019,-0.009,-0.006,0.014,0.017,0.057,0.035,-0.023,-0.02,0.006,0.009,-0.037,0.089,0.109,0.05,0.01,-0.01,-0.063,0.024,-0.012,0.031,0.095,-0.048,0.011,-0.03,-0.042,0.035,-0.017,0.053,0.031,-0.008,0.004,-0.021,0.055,-0.061,0,-0.082,-0.011,0.053,0.096,-0.046,0.081,0.059,0.003,-0.002,0.044,0.055,-0.022,0.029,-0.005,0.021,0.014,0.013,-0.014,0.097,-0.075,0.059,0.011,-0.087,0.012,-0.015,0.007,0.011,0.085,-0.02,0.038,-0.021,-0.006,-0.07,0.016,0.007,0.009,-0.06,0.12,-0.052,0.051,-0.038,0.004,0.032,0.107,-0.001,-0.01,0.036,-0.013,0.111,0.021,-0.008,-0.051,0.063,0.003,-0.055,0.017,-0.08,0.041,0.004,0.081,0.085,0.03,-0.026,-0.07,0.008,-0.078,0.036,-0.091,-0.043,-0.057,0.054,-0.017,0.028,0.025,0.041,-0.055,-0.023,0.079,0.052,-0.049,0.044,0.013,0.003,0.023,-0.051,0.083,0.026,-0.024,0.095,-0.105,0.014,-0.009,0.013,0.03,-0.009,0,0.065,-0.086,-0.036,-0.045,-0.032,0.004,-0.097,-0.078,0.01,0.026,0.07,-0.046,-0.078,0.045,-0.01,-0.003,0.058,-0.035,0.003,0.017,-0.013,-0.031,0.013,0.037,-0.024,-0.013,-0.016,0.066,0.037,0.001,0.073,0.001,-0.005,0.007,-0.061,0.019,0.005,0.103,0.192,0.009,0.054,0.024,0.005,0.006,-0.07,-0.007,-0.068,-0.119,-0.066,0.063,0.068,0.012,0.002,-0.076,-0.037,0,0.055,-0.014,0.064,-0.036,0.118,-0.087,-0.016,-0.018],
+  /* kb-104 */ [-0.01,0.043,0.014,-0.005,-0.024,0.057,-0.053,0.045,-0.041,-0.028,0.087,-0.103,0.034,0.021,-0.107,0.036,0.006,-0.084,0.015,0.015,0.05,-0.024,-0.094,0.034,-0.08,0.027,0.069,-0.014,-0.052,-0.025,0.003,-0.01,-0.081,0.045,0.023,0.028,0.008,-0.091,-0.011,-0.097,-0.014,-0.025,0.027,0.009,0.038,-0.059,0.072,-0.042,0.027,-0.041,-0.039,0.053,0.051,-0.099,0.017,-0.001,0.005,0.043,0.017,-0.041,0.118,-0.088,0.087,-0.021,0,0.004,-0.05,-0.084,-0.157,0.037,0.01,-0.011,0.011,0.032,0.028,0.056,0.013,-0.048,0.083,-0.068,-0.081,0.023,-0.031,0.044,0.062,0.058,0.06,-0.046,0.022,0.039,-0.009,-0.086,-0.037,0.098,0.026,-0.025,0.043,0.012,-0.025,-0.024,-0.01,0.147,0.043,0.054,-0.114,0.031,0.049,0.111,-0.062,-0.077,0.061,0.043,-0.06,-0.032,0.048,0.023,-0.06,-0.045,0.048,-0.016,-0.022,-0.074,-0.058,-0.001,0.064,-0.012,0.075,0,-0.043,-0.084,0.006,0.023,0.044,0.047,-0.009,0.009,-0.016,-0.007,-0.009,0.005,0.029,0.027,-0.034,-0.074,0.039,0.045,-0.065,0.004,0.122,-0.026,-0.013,-0.092,0.027,0.149,0.009,0.081,0.039,0.025,0.02,-0.009,0.052,-0.024,0.006,-0.021,0.018,0.063,-0.014,-0.012,-0.023,0.013,-0.035,-0.009,-0.049,-0.067,-0.011,-0.02,0.016,0.054,-0.054,0.062,0.124,-0.015,0.031,-0.025,0.017,0.005,-0.073,-0.033,0.047,0.077,-0.053,-0.057,0.015,0.03,0.06,-0.001,-0.028,-0.022,-0.045,-0.003,0.043,-0.021,0.014,-0.041,0.009,0.012,0.007,-0.042,-0.054,-0.057,-0.008,0.008,-0.009,0.011,-0.112,0.066,-0.012,0.072,0.081,-0.038,-0.026,0.067,-0.039,0,-0.009,-0.009,0.009,-0.055,-0.009,0.016,0.021,0.028,0.009,0.035,0.052,0.048,-0.105,0.051,0.025,0.004,-0.031,-0.007,0.039,0.066,0.1,0.079,0.011,-0.027,-0.036,0.129,0.026,0.1,0.011,-0.048,0.044,0.002,0.012,0.081,0.013,-0.013,-0.018,-0.071,0.012,0.003,-0.02,0.069,-0.018,0.056,0.02,0.019,-0.024,-0.048,-0.026,0.092,-0.026,0.052,-0.01,0.028,-0.058,-0.009,-0.051,0.002,-0.044,0.068,-0.008,0.026,-0.01,0.018,0.038,-0.045,-0.041,0.032,0.092,0.02,0.034,0.006,-0.029,-0.048,0.008,-0.004,-0.089,0.007,0.053,0.025,0.044,-0.048,0.055,0.108,0.015,0.018,-0.052,0.034,0.072,-0.026,-0.015,-0.065,-0.035,0.07,-0.074,0,-0.087,-0.025,0.036,-0.08,0.051,-0.1,-0.04,-0.039,0.001,0.003,0.012,-0.035,-0.017,0.042,0,-0.048,-0.092,-0.016,0.018,-0.015,-0.059,-0.034,0.083,0.011,-0.008,-0.023,0.03,0.072,-0.079,-0.036,-0.06,0.068,0.027,0.013,-0.019,0.049,0.058,0.07,-0.014,-0.026,0.013,0.019,-0.014,-0.029,0.055,0.068,-0.019,-0.017,0.007,-0.112,-0.147,0.008,-0.156,-0.019,-0.115,-0.081,-0.059,0.002,0.027,0.03,0.074,0,-0.044,-0.033],
+  /* kb-105 */ [-0.039,0.074,-0.041,-0.02,0.063,-0.059,0.065,0.047,-0.027,0.013,0.076,-0.057,0.084,-0.017,0.029,-0.016,0.038,-0.058,-0.051,0.027,0.022,0.052,-0.002,0.075,-0.005,-0.026,0.017,0.028,-0.105,-0.069,0.009,-0.008,0.022,0.024,0.054,0.051,-0.044,-0.017,-0.099,-0.062,0.022,0.036,0.063,0.021,0.037,0.042,-0.037,-0.02,0.044,-0.065,0.102,0.027,0.039,-0.032,0.035,-0.099,-0.006,0.072,-0.027,0.005,0.083,0.028,0.012,-0.035,0.071,-0.036,0.044,-0.08,-0.09,0.042,-0.045,0.012,-0.047,-0.01,0.002,0.049,-0.013,0.068,0.002,0.02,-0.09,-0.103,0.042,0.025,0.045,0.048,0.043,-0.044,0.045,0.053,-0.012,-0.026,0.076,0.135,-0.016,0.038,0.005,-0.004,-0.05,0.015,0.013,0.078,-0.002,0.078,-0.007,-0.021,0.087,0.034,0.026,-0.05,-0.036,-0.109,-0.003,-0.053,-0.034,0.033,-0.054,0.068,0.082,0.003,0.028,0.013,0.022,-0.032,0.041,-0.065,0.055,0,-0.009,-0.008,-0.038,0.045,-0.005,0.042,-0.041,-0.005,-0.011,-0.029,0.048,0.011,0.065,0.028,-0.04,-0.032,-0.065,-0.007,-0.023,0.02,-0.005,-0.121,0.019,-0.055,-0.058,0.124,0.033,0.016,0.105,0.039,0.001,-0.042,-0.058,-0.016,0.02,0.049,0.048,0.063,0.014,0.023,-0.004,-0.022,-0.033,-0.042,0.04,-0.049,-0.006,0.039,-0.027,0.037,-0.073,-0.004,0.087,-0.015,-0.035,-0.015,0.067,0.038,-0.028,-0.064,0.025,0.055,0.046,-0.1,-0.001,0.033,-0.032,-0.031,-0.043,-0.044,0.014,-0.099,0.064,-0.002,-0.031,-0.007,0.03,0.017,-0.033,-0.049,-0.096,-0.126,-0.043,-0.035,-0.113,-0.066,-0.09,0.029,0.008,0.067,0.112,-0.001,0.059,0.04,0.048,0,0.037,0.046,0.088,-0.026,0.009,-0.021,-0.029,0.025,-0.032,0.04,-0.016,-0.058,-0.052,-0.04,0.069,-0.006,-0.053,0.019,0.094,0.059,0.022,-0.011,-0.058,0.063,-0.001,0.126,-0.012,0.057,0.004,-0.071,-0.019,-0.012,-0.005,0.114,-0.059,0.023,0.017,-0.071,0.024,-0.073,0.03,0.021,-0.005,0.001,0.041,0.004,0.04,0.058,0.047,0.035,0.031,0.041,-0.06,0.053,-0.017,0.014,0.019,0.051,-0.088,-0.027,0.036,0.034,0.084,0.006,-0.084,-0.08,0.024,0.048,0.115,0.02,0.038,-0.02,0.004,-0.11,0.047,-0.03,-0.101,0.021,-0.018,-0.048,0.018,0.012,0.009,0.109,0.036,-0.04,0.026,0.026,-0.036,-0.044,-0.027,0.024,-0.027,0.213,-0.032,0,-0.004,-0.035,0.028,-0.062,0.003,-0.093,-0.018,0.017,-0.07,-0.022,0.02,0.037,0.001,-0.035,0.083,-0.039,-0.02,0.051,-0.035,-0.026,-0.044,-0.057,0.063,-0.086,0.02,0.036,-0.036,0.068,0.05,-0.075,-0.078,0.033,0.023,-0.056,-0.057,-0.02,0.043,-0.015,-0.007,-0.042,0.017,0.016,-0.049,-0.004,-0.051,0.002,-0.016,-0.039,-0.082,-0.057,-0.077,0.035,-0.059,0.041,-0.089,-0.019,-0.136,0.001,0.001,0.065,0.006,-0.015,-0.063,-0.023],
+  /* kb-106 */ [0.044,-0.066,0.119,0.004,0.051,-0.056,0.066,-0.039,-0.028,0.027,0.024,-0.011,0.024,0.027,-0.079,0.05,-0.009,0.016,0.005,0.017,0.028,0.021,-0.035,0.038,-0.03,0.096,0.052,0.001,0.014,0.004,0.013,0.07,0.023,-0.03,0.093,-0.017,-0.056,-0.015,-0.02,-0.093,0.013,0.039,0.031,-0.123,0.027,-0.07,0.024,-0.062,0.098,-0.013,0.058,-0.011,0.146,-0.069,-0.043,-0.076,0.089,0.013,0.073,0.02,0.01,-0.018,-0.053,-0.011,0.026,-0.02,-0.023,0.044,-0.021,0.097,-0.05,0.09,0.04,0.002,-0.012,-0.028,-0.041,-0.042,0.01,0.001,-0.026,-0.006,0.075,-0.042,0.041,0.045,0.038,-0.043,0.045,-0.018,0.019,-0.064,-0.01,0.005,-0.084,0.056,-0.011,-0.11,0.043,0.065,-0.088,0.009,0.01,-0.044,0.003,0.003,0.04,-0.018,-0.089,0.022,-0.086,0.042,-0.08,0.064,0.006,-0.027,-0.012,0.032,-0.1,-0.048,0.032,-0.059,-0.015,-0.002,0.105,-0.03,0.042,0,0.071,0.002,0.013,0.01,0.015,-0.084,-0.031,-0.017,0.042,0.041,0.008,-0.064,0.022,-0.078,0.084,-0.008,-0.049,-0.058,-0.003,-0.042,0.004,-0.01,-0.021,0.031,0.065,-0.037,-0.037,-0.102,0.107,0.034,0.011,0.043,0.069,0.046,0.019,0.064,-0.042,0.049,0.008,-0.039,-0.017,-0.108,-0.051,0.002,0.048,-0.022,0.066,-0.012,0.015,-0.017,0.06,0.059,0.01,-0.059,-0.025,0.091,0.209,-0.119,-0.007,0.036,-0.03,-0.045,0.072,-0.148,-0.02,-0.027,0.012,-0.006,-0.011,-0.152,-0.039,-0.09,0.032,0.057,-0.053,-0.023,-0.017,-0.011,-0.02,-0.001,-0.033,-0.035,-0.11,0.017,0.016,0.035,-0.04,-0.019,0.024,-0.011,0.015,0.01,0.047,-0.025,0.014,0,0.009,0.047,0.054,0.018,-0.037,0.004,0.035,0.071,-0.059,-0.013,-0.079,0.028,-0.126,0.025,-0.02,0.042,0.033,0.073,0.022,-0.047,0.058,0.03,0.153,-0.06,0.007,0.031,0.074,0.048,0.046,0.035,-0.016,0.02,0.007,-0.046,0.058,-0.014,-0.067,-0.084,-0.094,-0.077,0.004,-0.008,0.067,-0.022,0.022,-0.032,0.006,0.057,0.007,-0.002,0.057,0.03,0.003,0.083,0.051,-0.078,0.062,-0.074,-0.077,-0.016,-0.059,0.063,-0.039,0.045,-0.009,-0.045,0.04,0.039,0.014,-0.033,-0.036,-0.039,-0.006,-0.002,-0.06,-0.006,-0.065,-0.059,0,-0.027,-0.065,0.029,-0.026,0.125,-0.052,-0.077,-0.049,-0.108,0.035,-0.014,0.028,0.048,0.068,0.045,-0.05,0,-0.071,-0.002,0.055,-0.052,0.089,-0.114,0.008,-0.006,-0.036,-0.043,0.007,-0.022,-0.008,0.03,-0.01,0.022,0.04,-0.02,-0.065,-0.133,-0.068,-0.037,0.01,0.026,0.01,0.021,-0.016,-0.036,-0.01,0.005,-0.011,0.037,-0.027,-0.026,0.035,-0.005,0.029,-0.08,0.031,-0.009,-0.02,0.07,0.008,-0.006,-0.002,0.052,-0.043,-0.01,0.041,0.048,-0.069,-0.028,0.009,0.039,-0.017,-0.017,-0.027,-0.011,0.066,0.027,-0.017,-0.031,-0.017,0.04],
+  /* kb-107 */ [0.021,-0.057,-0.081,-0.046,-0.018,-0.017,-0.058,0.001,0.068,0.046,0.065,0.039,-0.102,-0.044,-0.098,0.044,-0.064,0.106,-0.009,-0.07,0.018,0.018,0.088,0.018,-0.097,0.058,0.059,0.06,0.003,0.043,-0.09,0.096,0.034,0.038,0.001,-0.029,-0.036,0.031,0.058,-0.022,-0.009,-0.041,-0.004,-0.099,0.087,-0.004,0.005,0.071,0.039,0.022,-0.032,0.016,0.044,0.012,0.023,0.039,0.038,0.083,0.077,-0.042,0.125,-0.069,0.023,0.029,-0.035,0.038,0.038,-0.081,0.013,0.049,-0.021,-0.003,-0.048,0.023,-0.026,-0.05,-0.003,0.038,0.043,0.073,-0.085,0.043,0.141,0.034,0.028,-0.081,0.005,0.034,0.045,-0.01,-0.039,-0.017,-0.064,-0.011,-0.034,0.016,0.053,-0.042,-0.091,0.085,-0.002,0.01,-0.146,-0.002,-0.028,0.029,0.014,0.08,-0.061,0.089,0.01,-0.043,-0.039,0.063,-0.014,-0.055,-0.088,0.048,0.009,0.031,-0.025,0.046,-0.04,0.019,-0.017,0.034,-0.048,0,0.027,0.05,0.074,-0.076,-0.024,-0.081,-0.005,-0.006,0.059,0.045,0.099,-0.012,-0.027,-0.157,0.004,-0.018,-0.008,-0.01,-0.092,0.049,0.028,0.01,0.04,-0.045,0.067,0.044,-0.031,-0.001,0.058,0.025,-0.063,0,0.077,-0.005,-0.072,-0.024,-0.022,-0.059,-0.026,0.038,0.035,-0.032,0.034,-0.036,0.009,0.013,0.07,0.036,0.01,0.024,0.031,0,0.018,-0.055,-0.003,-0.065,0.033,-0.056,-0.077,0.055,0.011,-0.149,0.052,-0.043,-0.006,-0.007,-0.1,-0.015,-0.002,-0.084,-0.103,-0.015,0.007,0.08,-0.199,-0.035,0.031,0.025,-0.009,-0.07,0.046,-0.063,-0.013,-0.029,-0.052,-0.034,-0.065,-0.023,0.006,-0.028,-0.068,-0.016,-0.041,0.059,0.068,0,0.01,0.014,-0.078,0.097,-0.082,0.016,0.031,-0.035,0.015,-0.073,-0.034,0.008,-0.073,0.037,-0.05,0.012,0.085,0.017,-0.006,0.021,0.014,0.015,0.087,-0.027,0.05,-0.033,0.06,0.03,-0.096,0.058,0.053,-0.023,0.033,0.024,0.047,0.062,-0.064,-0.051,0.069,-0.003,0.07,0.037,-0.041,0.013,-0.013,-0.031,0.015,0.071,-0.004,-0.041,-0.002,0.006,0.003,0.055,-0.017,0.045,-0.018,-0.05,-0.059,-0.067,-0.036,0.119,-0.015,-0.015,0.068,-0.056,-0.045,0.078,-0.011,0.02,-0.031,0.024,0.067,0.022,0.01,-0.04,0.035,-0.12,0.079,-0.053,-0.042,-0.028,0.011,0.06,-0.023,0.069,-0.007,0.08,0.045,0.016,0.02,-0.015,0.033,-0.025,-0.058,0,0.031,-0.01,-0.023,0.045,0.063,0.02,0.039,-0.024,-0.034,-0.051,-0.056,-0.02,0.024,-0.015,0.022,0.026,-0.061,0.069,-0.037,-0.019,-0.05,-0.094,0.052,-0.018,0.092,-0.061,0.008,0.001,-0.009,-0.012,-0.003,-0.055,0.078,0.036,0.064,0.074,0.028,0.038,0.035,-0.019,-0.055,0.033,-0.027,-0.034,-0.074,-0.015,0.077,0.03,-0.007,0.001,0.02,0.066,0.007,-0.006,0.024,-0.033,-0.012,-0.003,-0.044,0.083,-0.077,0.011,-0.029,-0.031],
+  /* kb-108 */ [-0.012,-0.046,0.08,0.006,-0.019,-0.083,0.022,-0.064,-0.11,-0.089,0.041,0.03,0.039,0.029,-0.11,0.015,-0.013,0.091,-0.009,-0.04,0.017,-0.001,-0.012,0.05,-0.031,0.034,0.086,-0.003,0.013,-0.101,0.061,0.084,-0.03,-0.142,0.015,0.035,0.022,-0.049,-0.006,-0.091,0.049,0.039,0.076,-0.023,0.018,0.043,0.04,-0.034,0.092,0.008,0.077,-0.087,0.154,-0.1,-0.057,-0.022,0.055,-0.027,0.042,0.026,0.061,0.016,-0.034,0.027,0.023,0.028,0.039,-0.015,0.019,0.058,-0.035,-0.019,0.005,0.029,0.028,0.006,-0.047,-0.051,-0.003,0.071,-0.131,-0.043,0.083,-0.026,0.07,0.066,0.009,-0.023,0.022,0.02,-0.022,0.045,-0.041,-0.006,0.023,0.059,-0.059,-0.009,0.002,0.082,-0.064,-0.041,0.011,0.001,-0.039,0.011,-0.023,-0.014,-0.062,0.033,-0.022,0.073,-0.022,0.05,-0.036,-0.072,-0.01,0.034,-0.065,-0.016,0.046,0.025,0.006,0.009,-0.001,-0.015,0.044,0,0.023,0.001,-0.05,-0.043,-0.036,-0.025,0,-0.044,0.043,0.073,0.109,0.007,-0.051,-0.072,-0.013,-0.096,0.025,-0.073,-0.065,-0.022,0.042,-0.002,-0.058,0.005,0.022,-0.018,0.025,0,0.027,0.025,0.023,0.01,-0.033,0.058,-0.017,0.045,0.008,0.038,-0.03,-0.059,-0.014,-0.01,-0.054,-0.061,-0.062,0.021,-0.008,0.041,0.047,0.006,0.078,0.008,-0.004,0.037,-0.079,0.018,0.083,-0.084,-0.093,-0.016,-0.003,0.006,0.045,-0.037,0.006,0.035,-0.005,0.038,0.014,-0.089,-0.061,-0.02,0.053,0.077,-0.01,-0.03,-0.046,-0.036,-0.075,0.066,0.05,0.03,-0.061,0.025,0,0.027,-0.03,0.021,0.022,0.082,0.007,-0.025,0.05,0.02,0.018,0,0.043,0.017,0.1,0.079,-0.066,-0.049,0.099,0.064,-0.062,-0.095,-0.043,0.012,-0.095,0.031,0.03,0.066,-0.049,0.098,0.093,-0.056,0.05,0.008,0.009,0.041,-0.007,-0.038,-0.014,0.026,-0.057,0.023,-0.073,-0.008,0.09,-0.076,-0.064,0.025,-0.025,0.021,-0.003,-0.02,0.002,-0.015,-0.036,-0.052,-0.047,0.016,0,-0.002,0.003,0.039,0.065,0.059,0.088,-0.053,0.022,0.014,0.106,-0.076,-0.003,0.021,-0.031,0.067,-0.107,0.067,-0.019,-0.061,0.017,-0.04,-0.031,0.008,-0.128,0.036,0.055,0.005,0.072,-0.039,-0.074,-0.042,-0.007,-0.027,0.049,-0.004,-0.018,0.087,0.04,-0.031,-0.051,-0.11,0.032,-0.022,0.035,0.028,0.047,-0.023,0.046,0,0.013,-0.02,0.062,-0.048,0.025,0.041,0.025,0.095,-0.032,-0.089,-0.045,0.005,-0.045,0.045,0.003,-0.058,0.025,0.062,-0.057,-0.078,-0.023,-0.057,0.087,0.065,-0.073,-0.015,0.102,0.034,0.021,0.034,-0.01,-0.002,-0.034,-0.057,-0.053,0.053,-0.082,0.017,0.052,0.081,-0.16,0.131,-0.037,-0.014,-0.038,-0.065,-0.065,-0.032,0.006,-0.013,0.076,0.061,-0.007,0.071,0.005,0.012,0.019,-0.014,-0.033,-0.023,-0.059,0.014,0.071,-0.076],
+  /* kb-109 */ [-0.009,-0.058,0.035,-0.04,-0.027,-0.037,0.012,0.041,0.048,0.023,0.013,-0.024,-0.067,-0.013,-0.092,-0.078,-0.055,-0.023,0.057,-0.01,0.073,-0.015,-0.027,0.018,-0.063,0.086,0.001,0.002,0.102,-0.004,-0.017,-0.07,0.006,-0.087,0.068,-0.038,0.003,0.008,-0.132,-0.047,0.06,-0.052,0.071,-0.032,0.128,0,0.05,-0.056,0.076,0.027,-0.022,-0.028,0.037,0.025,-0.045,-0.068,0.009,-0.025,0.058,0.003,-0.035,0.056,-0.011,0.085,-0.018,-0.002,0.051,-0.021,-0.012,0.057,-0.025,-0.018,-0.046,-0.009,-0.01,-0.08,-0.026,-0.008,-0.027,0.104,-0.026,0.024,0.037,0.046,-0.059,0.038,-0.013,-0.036,0.04,0.047,-0.021,0.061,0.043,0.016,-0.002,0.011,0.001,-0.008,0.048,0.028,-0.046,0.041,-0.033,-0.014,-0.006,0.008,-0.005,0.028,-0.023,0.019,0.026,0.028,0.042,0.003,0.029,-0.052,-0.076,0.066,-0.048,0.021,-0.053,0,-0.1,0.013,0.106,0.003,-0.002,0,0.094,-0.09,0.042,0.002,-0.068,0.021,-0.06,-0.027,0.008,0.082,0.122,-0.072,-0.064,-0.052,0.023,-0.072,-0.018,-0.051,-0.021,0.021,0.001,0.004,-0.015,0.033,-0.02,0.094,-0.063,-0.016,0.04,0.054,-0.107,-0.05,0.098,-0.02,-0.067,0.019,-0.029,-0.014,-0.053,-0.009,-0.02,-0.017,-0.069,0.01,-0.016,-0.002,0.014,0.012,0.031,0.021,-0.012,0.023,-0.002,0.005,-0.057,0.038,-0.011,-0.048,-0.105,0.036,-0.033,-0.006,0.017,-0.002,-0.055,0.043,0.034,-0.076,0.096,-0.098,-0.172,-0.004,-0.02,0.023,-0.095,0.031,0.015,0.089,-0.067,-0.021,-0.038,-0.072,0.003,0.033,0.066,-0.015,0.007,-0.019,-0.036,-0.117,-0.057,-0.053,0.027,0.038,0.053,0,0.013,0.006,0.017,-0.005,-0.008,-0.045,0.062,0.008,0.006,-0.037,-0.081,0.066,-0.056,0.033,-0.055,0.039,0.048,0,-0.036,-0.005,-0.005,0.088,0.104,-0.027,0.054,0.018,-0.026,0.025,-0.052,0.034,-0.03,-0.008,0.047,-0.068,-0.106,0.011,-0.025,-0.056,-0.053,-0.025,0.067,0.035,-0.015,0.012,-0.051,0.03,0.081,0.015,0.014,0.078,-0.034,0.06,0.05,0.154,0.097,-0.059,0.093,-0.03,-0.094,-0.016,-0.052,0.097,0.003,0.03,0.104,-0.046,0.077,-0.002,-0.051,-0.017,-0.014,-0.005,0.158,0.015,0.055,-0.022,-0.045,-0.133,-0.034,-0.038,-0.072,-0.025,0.065,0.126,0.003,-0.012,-0.013,-0.085,0.018,0.034,-0.011,0.034,0.087,0.03,-0.019,0,-0.077,-0.013,-0.043,0.027,0.018,0.038,-0.045,0.064,-0.036,-0.047,0.102,0.042,0.035,-0.023,0.003,0.026,-0.017,0.015,-0.041,-0.099,-0.06,-0.125,0.089,-0.001,-0.019,-0.023,-0.029,0.012,-0.012,0,-0.058,-0.014,0.053,-0.022,0.048,0.048,0,0.015,0.03,0.053,0.009,0.05,0.013,0.019,-0.008,0.074,0.008,0.094,0.02,0.037,-0.004,-0.016,0.01,0.02,0.043,-0.064,-0.035,0.072,-0.009,0.074,-0.044,0.073,0.075,-0.057],
+  /* kb-110 */ [0.003,-0.02,0.028,-0.035,0.049,-0.059,-0.063,0.017,-0.118,-0.06,0.017,-0.023,0.002,-0.048,-0.049,0.027,-0.036,0.097,0.028,-0.138,-0.041,-0.033,0.036,0.045,-0.027,0.015,-0.007,0.006,-0.095,-0.099,-0.097,0.054,0.033,0.017,-0.004,-0.015,0.101,-0.003,0.044,-0.061,0.04,0.069,0.005,-0.041,-0.023,-0.02,-0.056,-0.03,-0.043,0.129,0.025,-0.044,0.042,0.003,0.034,0.022,0.074,0.019,0.036,-0.027,0.056,0.024,-0.001,0.057,0.012,0.027,0.095,0.014,0.031,0.134,-0.034,0,-0.053,0.024,-0.004,-0.01,-0.033,-0.047,-0.032,0.024,-0.126,-0.027,0.063,-0.026,0.055,0.046,0.065,-0.035,-0.029,-0.031,0.024,0.046,-0.072,-0.082,0.101,0.091,-0.112,0,-0.003,-0.014,0.063,-0.043,-0.006,0.047,0.014,0.025,-0.05,0.051,-0.003,0.035,0.073,0.042,0.056,-0.005,0.013,0.003,-0.024,0.064,-0.064,0.113,0.078,0.014,-0.043,-0.009,-0.049,0.001,0.043,0,-0.033,-0.004,0.02,-0.038,0.001,-0.039,-0.038,0.001,0.018,-0.06,0.029,-0.003,-0.063,-0.003,-0.024,0.002,0.024,0.017,0.014,-0.004,-0.06,0,0.021,0.03,0.072,-0.043,0.029,0.024,-0.116,-0.009,0.039,-0.033,-0.079,0.015,0.012,-0.031,0.033,0.044,0.026,0.029,-0.005,-0.013,0.003,-0.046,-0.025,0.008,0.133,0.014,0.041,0.031,0.071,-0.073,-0.024,-0.008,-0.023,0.049,0.038,-0.077,0.01,0.058,0.093,-0.037,0.046,0.033,-0.009,0.015,-0.082,-0.045,-0.046,0.004,-0.009,-0.056,-0.025,0.112,0.009,-0.015,-0.129,-0.045,-0.025,0,-0.038,0.004,-0.065,-0.03,0.061,-0.04,0.017,-0.051,0.024,0.055,0.092,-0.057,-0.039,0.047,0.076,0,-0.016,0.018,0.153,0.072,-0.121,-0.047,-0.012,0.091,-0.021,-0.009,0.021,0.06,-0.179,0.002,-0.015,0.019,0.001,0.023,-0.016,-0.058,0.068,-0.028,0.006,0.105,0.001,0.028,-0.001,-0.045,0.052,-0.076,-0.024,0.059,0.033,0.037,0.047,0.068,0.035,0.106,0.02,-0.046,0.012,0.037,-0.051,-0.024,0.016,-0.039,-0.007,0,0,0.025,0.056,0.025,0.031,-0.048,0.01,0.022,-0.085,0.006,0.011,0.003,-0.077,-0.034,-0.018,-0.002,0.018,-0.044,0.054,-0.038,-0.042,0.037,0.059,0.098,-0.058,-0.038,-0.027,-0.084,-0.087,-0.021,-0.03,-0.034,0.062,-0.099,-0.026,-0.033,-0.047,0.014,0.01,0.051,0.011,-0.046,0.008,0.013,-0.084,-0.051,-0.028,0,-0.004,-0.027,0.05,-0.011,0.022,0.02,0.055,0.085,0.027,-0.053,-0.017,0.036,0.042,0.044,-0.032,-0.012,-0.042,0.011,-0.038,0.019,-0.086,0.014,-0.018,0.099,-0.093,-0.035,0.062,0.06,0.079,-0.006,0.074,-0.033,-0.023,0.032,0,-0.003,-0.037,0.045,0.027,0.103,-0.102,0.02,-0.004,-0.008,-0.003,-0.129,0.011,0.002,-0.066,-0.033,0.117,-0.007,-0.078,0.011,-0.065,-0.068,0.032,0.086,-0.048,0.047,-0.019,-0.104,0.029,-0.045],
+  /* kb-111 */ [0.032,0.025,-0.052,-0.025,-0.098,-0.075,0.031,-0.044,0.01,-0.053,0.025,-0.008,-0.064,-0.013,-0.043,-0.092,-0.034,0.105,0.004,-0.134,-0.061,-0.053,0.046,-0.001,-0.028,0.046,-0.015,0.043,0.023,-0.027,0.051,0.09,-0.031,-0.007,-0.045,-0.018,-0.022,0.014,0.013,-0.017,0.059,-0.011,0.078,-0.018,-0.013,-0.007,0.003,0.065,0.011,-0.033,-0.04,-0.028,0.06,-0.019,-0.029,0.023,0.083,0.049,0.08,-0.012,0.095,-0.026,0.015,0.04,-0.07,-0.008,0.07,-0.011,-0.017,0.043,0.032,0.003,-0.047,0.025,0.038,-0.054,0.051,-0.103,0.029,0.094,-0.132,-0.006,-0.001,0.097,-0.004,-0.03,-0.034,-0.003,0.037,-0.007,0.013,0.021,-0.028,-0.022,-0.002,-0.011,0.005,-0.074,-0.05,0.128,-0.091,-0.03,0.03,0.048,-0.066,0.044,0.02,0.04,-0.031,-0.004,-0.092,0.074,0.087,0.056,-0.102,0.007,-0.028,-0.003,-0.101,-0.021,0.056,-0.024,-0.098,-0.009,-0.015,0.018,0.032,0,0.031,0.105,0.053,0.013,0.053,-0.082,0.012,0.026,0.022,0.071,0.121,-0.036,-0.053,-0.097,0.021,-0.156,0.006,0.041,-0.059,0.011,-0.03,-0.062,0.014,-0.05,0.014,0.086,0.055,0.016,0.058,0.029,0.068,0.046,-0.017,0.038,-0.007,-0.084,-0.082,0.023,-0.022,0.014,-0.021,0,-0.029,0.031,0.056,0.056,0.033,0.037,0.018,0.088,0.076,0.058,-0.086,0.042,-0.005,-0.041,0.043,-0.043,-0.076,0.032,0.046,-0.038,-0.008,-0.012,0.007,-0.03,-0.041,-0.056,0.012,-0.016,-0.024,-0.017,0.018,0.05,-0.088,0.021,0.012,-0.024,-0.05,-0.025,0.006,-0.041,-0.013,-0.016,-0.063,-0.035,-0.063,0.021,0.019,0.039,-0.05,-0.017,0.061,-0.033,-0.001,0,-0.061,0.03,-0.086,0.042,-0.039,-0.04,-0.012,0.01,0.02,-0.038,-0.093,-0.003,-0.035,-0.017,-0.04,0.041,0.093,0.078,-0.006,0.054,0.033,-0.006,-0.029,0.014,0.023,0.037,0.056,0.036,-0.073,0.016,-0.075,-0.096,0.03,-0.006,0.01,0.032,0.007,-0.049,0.009,-0.036,0.014,0.034,-0.074,0.057,-0.034,0.011,-0.002,0.019,-0.036,-0.006,0.04,-0.003,0.045,0.013,0.05,0.102,0.072,-0.037,0.004,-0.051,-0.061,0.041,0.012,0.018,0.05,-0.003,0.071,-0.014,0.022,0.079,-0.01,0.075,0.103,-0.002,0.06,-0.057,-0.059,-0.036,-0.021,-0.028,0.05,-0.066,0.026,-0.017,-0.034,-0.005,-0.009,-0.035,0.044,0.153,-0.026,0.047,0.101,-0.007,0.075,0,0.005,-0.152,-0.007,0.029,0.013,0.018,0.022,-0.012,-0.013,-0.096,-0.021,0.029,0.07,0.009,0.052,-0.023,-0.054,0.05,-0.081,-0.027,0.002,-0.005,0.098,-0.019,-0.016,-0.066,-0.024,0.027,0.061,0.012,-0.021,-0.008,0.041,0,-0.009,0.045,-0.146,0.018,0.058,0.055,-0.068,0.145,-0.1,0.047,-0.005,0.023,-0.061,-0.006,-0.022,-0.002,0.054,0.014,0.015,0.04,-0.071,-0.035,0.033,-0.005,0.007,0.049,-0.102,0.151,-0.046,-0.062],
+  /* kb-112 */ [-0.063,0.038,0.102,-0.006,0.021,-0.008,-0.024,0,0.007,-0.031,-0.07,-0.029,0.04,-0.082,-0.189,0.05,0.012,0.074,0.053,-0.046,0,-0.021,-0.012,0.072,-0.041,0.069,-0.004,0.045,-0.035,-0.064,-0.016,-0.028,0.061,-0.046,-0.039,-0.061,0.088,0.014,-0.001,-0.052,0.009,0.062,0.04,-0.1,0.024,-0.019,0.015,-0.051,-0.005,-0.003,-0.006,-0.078,0.089,0.027,0.001,0.023,0.074,0.03,0.053,-0.023,0.022,-0.055,-0.088,0.052,-0.004,0.007,0.036,-0.046,0.069,0.118,-0.031,-0.007,0.027,-0.048,-0.019,0.035,-0.034,-0.059,0.061,0.011,-0.039,-0.007,0.022,-0.003,0.133,-0.004,0.082,-0.015,-0.02,0.044,-0.045,-0.063,0,0.008,0.037,0.042,-0.056,0.04,0.09,0.088,-0.052,0.067,0.112,-0.01,-0.062,0.021,0.002,0.062,-0.027,0.003,-0.086,-0.02,0.068,0.086,0.02,0.058,-0.057,0.028,-0.054,-0.022,0.047,-0.055,-0.008,0.005,0.055,0.027,-0.094,0,0.062,-0.001,-0.015,-0.037,0.02,-0.005,-0.055,0.08,-0.027,0.038,0.069,0.001,0.042,-0.145,-0.001,-0.075,-0.003,0.02,-0.09,-0.018,0.063,0.007,-0.021,0,0.079,0.041,0.021,0.051,-0.09,0.041,-0.011,-0.002,-0.014,0.044,0.061,-0.072,0.02,-0.014,-0.073,0.007,-0.002,-0.07,-0.073,-0.043,-0.026,-0.001,-0.017,0.085,-0.024,0.091,-0.001,0.066,0.027,-0.009,-0.086,-0.019,0.062,-0.139,-0.035,-0.011,-0.004,0.057,0.03,-0.079,0.004,-0.068,-0.069,-0.059,0.008,-0.006,0.021,-0.059,0.002,0.008,-0.011,-0.014,-0.047,-0.041,-0.03,-0.05,-0.026,-0.052,-0.009,-0.035,-0.009,-0.052,-0.013,-0.005,0.011,0.039,-0.026,-0.061,-0.089,0.059,0.032,0,-0.013,0.029,0.035,0.031,-0.074,0.046,0.018,-0.061,0.064,-0.014,0.017,0.021,0.005,0.057,0.042,0.023,0.053,-0.02,0.046,0.026,0.107,0.037,-0.027,0.011,0.017,0.004,0.036,0.051,-0.054,0.019,-0.042,0.028,0.027,-0.019,-0.074,0.084,-0.113,0.052,0.017,-0.098,0.046,0.088,0.042,0.003,0.018,-0.052,-0.003,0.06,0.012,-0.002,-0.009,-0.001,0.084,0.018,0.023,0.024,0.017,-0.055,-0.037,0.004,0.031,0.094,-0.055,-0.018,0.059,-0.022,-0.006,-0.002,0.007,-0.027,0.006,0.01,0.021,0.016,0.033,-0.029,-0.069,-0.058,-0.044,-0.026,0.088,-0.134,0.117,0.01,-0.088,0.031,-0.085,0.086,0.039,-0.014,-0.008,0.099,0,-0.034,-0.019,0,-0.038,-0.102,0.01,-0.031,0.049,-0.079,0.024,0.052,-0.049,-0.057,-0.012,-0.044,0.039,0.033,0.041,0.017,-0.092,0.113,-0.125,-0.105,-0.07,-0.044,0.038,0.013,0.042,-0.091,0.034,-0.007,0.03,0.018,-0.014,0.089,-0.024,-0.086,-0.032,0.17,-0.034,0.029,0.052,0,-0.047,0.028,-0.03,0,-0.026,0.016,-0.028,-0.008,-0.045,0.015,0.002,0.014,0.019,0.09,-0.04,0.015,0.005,-0.036,0.03,0.019,-0.022,0.02,0.041,-0.052],
+  /* kb-113 */ [0.03,0.022,-0.044,-0.006,-0.076,-0.111,-0.028,0.072,-0.054,-0.041,-0.019,0.068,0.079,0.042,-0.054,0.03,-0.009,0.01,-0.122,-0.104,0.035,-0.014,0.009,-0.021,-0.015,-0.036,0.005,-0.005,0.049,0.024,-0.023,0.009,-0.007,-0.1,0.044,-0.023,-0.03,-0.024,0.027,0.024,0.076,-0.08,-0.016,0.007,0,-0.023,0.029,0.058,0.066,-0.029,0.06,-0.052,-0.073,-0.028,-0.119,-0.073,-0.06,0.055,-0.03,-0.054,0.091,0.087,0.011,0.059,-0.034,-0.034,0.001,-0.059,0.001,0.06,-0.06,0.09,-0.043,-0.037,-0.024,-0.048,0.018,-0.066,0.012,0.07,0.022,-0.03,0.066,0.02,-0.017,-0.017,0.083,0.069,-0.002,0.028,0.001,0.014,-0.026,-0.002,0.014,0.013,0.024,0.025,-0.033,0.045,-0.075,-0.087,-0.015,0.062,0.034,0.039,0.011,-0.012,-0.04,0.048,-0.016,-0.012,0.058,0.045,-0.016,0.022,-0.026,0.051,0.053,0.039,0.049,0.027,-0.022,-0.022,0.03,0.092,0.027,0,-0.032,0.005,0.013,0.031,-0.06,0.041,-0.006,-0.017,0.023,0.043,-0.013,0.009,-0.047,-0.01,-0.045,-0.07,0.078,0.051,-0.029,-0.023,-0.06,-0.03,-0.009,-0.008,0.037,-0.053,-0.031,-0.05,-0.012,-0.001,0.018,-0.008,0.009,0.02,-0.055,0.021,-0.002,0.017,0.024,-0.036,0.018,0.014,0.08,-0.02,-0.054,0.044,-0.069,0.005,0.004,-0.05,0.024,0.096,-0.094,0.004,-0.001,0.023,0.016,-0.044,-0.085,0,-0.039,-0.025,0.002,0.046,-0.01,0.012,-0.011,-0.01,-0.035,-0.068,-0.036,-0.018,-0.013,-0.086,-0.05,-0.058,0.143,-0.081,0.025,-0.026,0.023,-0.043,-0.022,-0.061,0.047,-0.076,-0.021,0.065,0.028,-0.053,-0.049,-0.06,-0.009,0.001,0.065,0,0.033,0.016,0.082,0.117,0.046,0.075,0.008,0.044,-0.002,-0.031,-0.051,0.014,0.066,-0.019,-0.088,0.009,-0.007,-0.114,0.024,0.021,-0.084,0.024,-0.087,0.016,-0.102,0.002,-0.016,0.004,-0.017,0.006,-0.016,-0.07,-0.005,-0.028,-0.112,0.044,0.021,0.064,0.032,0.021,0.05,-0.107,-0.059,-0.084,-0.002,0.035,0.136,-0.151,0.022,-0.031,0.053,-0.006,-0.008,0.118,0.066,0.055,-0.014,0.055,0.006,-0.01,0.007,0.043,0.001,-0.026,-0.092,0.003,-0.036,0.053,0.018,0.001,-0.026,0.03,0.019,-0.013,0.012,-0.07,-0.036,-0.138,0.043,-0.028,-0.113,0.038,-0.06,-0.003,0.119,-0.099,0.064,-0.012,0.044,0.08,0.076,0.062,-0.007,0.053,0.044,0,-0.009,0.06,-0.034,0.027,0.022,-0.066,0.115,0.033,-0.023,-0.012,0.023,0.006,0.005,-0.015,0.009,0.039,0.005,0.002,-0.023,-0.12,-0.033,0.009,-0.036,-0.079,-0.018,0.006,0.087,0.086,-0.009,0.083,-0.039,0.028,-0.036,-0.024,-0.02,0.03,0.021,0.015,0.055,0.064,-0.008,0.019,0.037,-0.002,0.03,0.064,-0.105,0.085,-0.056,0.032,0.147,0.016,0.033,0.071,0.076,0.065,0.005,0.074,-0.015,0.054,-0.154,-0.025,0.001,-0.096],
+  /* kb-114 */ [-0.057,0.013,-0.018,-0.054,-0.05,0.077,-0.032,0.027,0.001,0.001,0.023,-0.029,-0.023,-0.077,-0.078,0.028,-0.005,0.058,-0.003,0.052,-0.039,0.021,-0.013,0.037,-0.021,0.021,-0.074,0.092,0.053,-0.088,0.013,-0.014,-0.004,0.004,-0.043,0.044,0.023,-0.106,0.025,0.027,0.055,0.043,0.092,-0.042,0.005,0.038,0.019,0.014,-0.061,-0.034,-0.081,-0.026,0.013,-0.028,-0.006,0.057,0.011,0.033,0.047,-0.001,0.044,-0.037,-0.001,-0.013,-0.011,0.011,0.034,-0.063,0.002,0.095,-0.061,-0.016,-0.081,0.016,-0.013,0.035,-0.028,-0.036,-0.035,-0.031,-0.116,0.03,-0.014,-0.039,0.083,0.061,-0.008,0.063,-0.002,0.038,-0.028,-0.029,0.061,-0.002,0.02,0.111,0.038,-0.022,-0.041,0.012,0.021,0.058,0.004,-0.011,-0.065,0.059,-0.026,0.062,-0.013,0.065,-0.01,0.084,-0.087,-0.021,-0.012,-0.083,-0.022,-0.059,0.027,0.013,-0.002,-0.058,0.016,0.016,-0.013,-0.007,-0.079,0,0.008,-0.044,-0.006,0.004,-0.079,0.023,-0.007,0.02,-0.042,0.079,0.054,0.041,0.018,-0.052,-0.009,-0.065,-0.011,-0.008,0.003,-0.01,0,0.01,-0.004,0.109,0.063,0.017,0.061,0.019,-0.048,-0.002,-0.019,0.05,0.065,-0.112,0.096,-0.13,-0.066,-0.052,-0.056,-0.003,0.058,-0.008,-0.097,-0.062,-0.029,0.023,-0.022,0.057,0.049,0.011,0,0.058,0.04,0.031,-0.049,0.049,0.02,0.008,-0.039,0.086,-0.121,0.058,0.055,-0.01,-0.03,0.022,0.013,-0.041,0.002,-0.029,0.031,-0.102,-0.054,0.04,-0.05,0.04,0.023,0.017,-0.003,0.036,-0.001,0.036,0.005,-0.044,-0.042,-0.048,0.027,-0.066,0.062,0.055,0.063,-0.036,-0.06,-0.046,-0.055,0,0.013,-0.027,-0.036,0.005,0.011,0.05,-0.05,-0.086,-0.058,-0.029,0.054,-0.038,-0.063,0.015,0.043,0.09,0.022,-0.073,0.014,0.02,0.146,0.03,0.007,0.11,0.101,-0.013,-0.071,-0.041,-0.093,0.025,-0.069,0.004,0.031,0.064,-0.063,-0.068,-0.068,0.026,0.126,-0.031,0.033,-0.001,0.036,0.019,-0.103,-0.047,-0.002,-0.033,0.049,0.126,-0.015,0.004,0.05,0.005,0.036,-0.099,0.011,-0.069,0.075,-0.015,0.049,-0.058,-0.024,0,0.11,-0.111,0.033,-0.132,-0.062,-0.009,0.023,-0.008,0.124,-0.016,-0.045,-0.035,0.015,-0.036,0.013,-0.001,-0.007,-0.007,0.094,0,-0.06,0.038,0.004,0.044,0.078,0.002,0,0.021,0.002,0.006,-0.021,0,0.019,-0.053,-0.104,-0.018,0.006,0.032,-0.077,0.067,0.009,0.002,0.131,-0.044,0.03,0.047,0.02,-0.075,-0.087,0.008,-0.01,-0.097,-0.022,0.063,0.144,-0.018,-0.024,-0.005,-0.008,0.04,0.036,0.024,-0.017,-0.023,0.044,-0.101,0.03,0.093,-0.016,0.067,0.03,0.104,-0.019,0.041,-0.016,0.009,-0.085,0.07,-0.1,0.093,-0.022,-0.072,-0.028,0.016,-0.059,0,-0.054,0.029,0.004,-0.022,-0.009,-0.074,-0.014,-0.006,0.051,-0.036],
+  /* kb-115 */ [-0.042,0.094,0.07,-0.051,-0.036,-0.035,-0.015,0.04,-0.02,0.021,0.009,-0.059,-0.072,-0.101,-0.026,-0.052,-0.058,0.085,0.01,0.03,-0.034,0.034,0.039,0.061,-0.049,0.042,-0.035,0.008,0.031,-0.129,0.041,0.024,0.018,-0.035,-0.123,-0.027,0.092,0.043,-0.021,-0.089,0.001,0.066,0.006,-0.035,0.013,0.076,0.029,-0.031,0.09,-0.046,0.047,-0.065,0.068,-0.008,-0.075,0.051,0.054,0.065,0.067,0.039,0.036,-0.004,-0.017,0.053,-0.01,0.048,0.053,-0.032,-0.004,0.047,0.031,-0.049,-0.086,-0.109,0.004,0.007,0.02,-0.052,-0.003,0.165,-0.129,-0.036,-0.012,0.016,0.029,-0.043,0,-0.022,-0.007,0.042,-0.109,0.016,0.055,0.027,0.006,0.032,-0.053,-0.034,0.079,0.138,-0.013,0.037,-0.03,0.017,-0.024,0.032,-0.096,-0.016,-0.027,0.011,-0.021,0.023,0.039,0.055,0.006,-0.01,-0.01,0.005,0.009,-0.171,0.015,0.023,-0.06,-0.08,-0.013,-0.032,-0.049,0,0.009,-0.025,0.02,-0.013,-0.024,-0.029,-0.034,0.006,-0.034,0.136,0.053,-0.071,0.005,-0.111,0.032,-0.094,-0.035,-0.015,-0.091,-0.001,-0.022,-0.056,-0.037,0.016,0.065,0.086,0.047,0.019,0.011,0.004,-0.077,0.021,0.033,0.019,0.036,0.056,0.031,0.007,-0.017,-0.014,-0.024,-0.031,-0.054,0.017,0.001,0.071,0,0.022,0.002,0.018,-0.013,0.006,0.04,0.057,-0.018,0.014,0.016,-0.007,-0.001,0.003,0.024,-0.032,0.022,0.011,0.017,0.087,-0.061,-0.04,-0.006,-0.078,-0.054,0.011,-0.034,0.054,-0.079,-0.009,-0.039,0.043,0.017,0.021,0.113,0.012,-0.03,0.036,0.086,-0.077,0.035,-0.074,0.013,-0.024,-0.022,-0.043,0.028,0.021,-0.013,0,0.069,-0.05,0.004,0.014,-0.005,0.028,0.092,0.032,-0.022,-0.058,0.068,-0.014,-0.034,0.01,-0.03,-0.03,0.067,0.064,0.011,0.024,0.005,0.012,0,-0.002,0.038,-0.062,-0.04,0.068,-0.03,-0.015,-0.067,-0.01,0.009,-0.032,0.002,0.051,-0.019,0.018,0.013,-0.049,-0.084,0.081,0.01,-0.033,0.008,-0.029,-0.037,0.039,-0.084,0.093,0.027,0.06,0.072,0,0.032,0.027,0.066,-0.054,0.016,-0.055,0.015,-0.016,-0.027,0.019,0.048,0.003,-0.023,0.006,0.007,0.004,-0.035,0.016,0.116,-0.022,0.067,-0.006,-0.094,-0.083,0.044,0.038,0.072,-0.062,0.085,0.045,0.003,0.041,-0.062,0.027,-0.042,0.03,-0.106,0.052,0.111,0.056,0.031,0,0.006,-0.066,0.011,0.01,0.024,0.095,-0.053,-0.082,-0.089,-0.127,0.018,0.044,0.014,0.033,-0.085,-0.009,-0.097,0.106,-0.025,-0.061,-0.057,0.054,0.113,-0.042,0.038,-0.033,0.032,0.08,0.022,-0.007,-0.038,0.056,-0.013,-0.098,0.018,0.045,-0.062,0.053,0.07,-0.024,-0.04,0.026,-0.034,0.047,-0.048,-0.002,0.137,0.066,-0.035,-0.004,0.085,0.066,-0.023,-0.032,0.017,0.028,-0.005,0.01,-0.1,0.002,-0.049,0.016,0.047,-0.038],
+  /* kb-116 */ [-0.07,-0.047,-0.012,0.02,0.033,-0.059,-0.044,-0.023,-0.046,-0.042,0.04,0.034,-0.045,0.001,-0.038,-0.033,0.037,-0.02,0.01,-0.019,-0.109,-0.027,-0.044,0.056,-0.041,0.031,-0.071,-0.066,-0.037,-0.112,-0.007,-0.013,-0.026,-0.036,0.121,0.064,0.048,-0.029,0.055,-0.046,0.018,-0.022,0.011,0.052,0.013,0.022,0.064,0.031,0.031,-0.051,-0.051,0.04,0.062,-0.093,-0.025,-0.037,0.027,0.008,-0.015,-0.088,0.064,-0.076,-0.029,0.004,0.042,-0.018,0.039,-0.08,0.003,-0.012,0.014,0.056,-0.049,0.101,-0.011,0.013,0.024,-0.035,0.064,0.115,0.047,-0.016,-0.029,0.074,-0.007,0.006,0.079,-0.057,-0.037,-0.001,0.063,0.076,0.02,0.028,-0.082,-0.019,0.03,0.013,-0.055,0.113,0.024,0.006,-0.033,0.039,0.001,-0.104,0.002,0.064,-0.037,0.024,0.03,-0.004,-0.051,0.083,-0.054,-0.005,0,-0.036,-0.051,-0.055,-0.042,0.097,-0.025,-0.05,0.006,0,0.038,0,-0.022,-0.046,0.042,-0.03,-0.037,-0.013,-0.035,0.109,0.066,-0.004,0.022,-0.045,0.018,-0.047,-0.055,-0.051,0.028,0.026,-0.021,-0.005,0.035,-0.008,-0.059,0.021,-0.001,0.077,-0.045,-0.01,-0.024,0.036,0.035,-0.027,0.075,0.006,-0.022,-0.048,0.039,0.007,-0.03,-0.047,-0.08,0.016,-0.115,0.057,-0.097,-0.056,0.04,0.02,-0.041,0.07,0.038,0.013,-0.021,0.13,-0.041,-0.024,0.03,-0.008,-0.024,-0.071,0.093,0.01,0.008,-0.074,0.107,-0.088,-0.019,0.106,0.082,-0.021,0.023,-0.014,0.041,-0.048,0.03,-0.022,-0.043,-0.026,0,-0.028,0.049,-0.064,-0.046,-0.073,-0.002,0.015,0.046,0.024,0.021,0.037,-0.012,-0.022,0.032,-0.011,0.128,0,0.012,-0.039,-0.036,0.068,-0.01,-0.012,-0.045,0.084,0.002,0.046,-0.026,-0.031,-0.002,0.091,-0.009,0.058,-0.008,0.003,0.026,-0.003,0.021,0.072,-0.002,0.082,-0.006,0.016,-0.006,-0.033,-0.087,0.072,0.014,0.037,0.032,0.039,-0.044,-0.003,-0.051,0.053,-0.003,-0.023,-0.016,0.005,0.066,-0.018,-0.02,-0.113,0.005,-0.038,0.081,0.181,-0.064,-0.037,0.006,0.013,-0.029,0.008,-0.066,-0.035,-0.087,0.087,0.021,0.002,-0.09,-0.049,0.131,-0.078,0.12,-0.011,0.088,-0.051,0.028,0.083,0.135,0.018,0.084,0.012,-0.037,0.057,0.016,-0.025,-0.032,-0.029,-0.029,0.023,-0.059,-0.031,-0.003,-0.041,-0.024,-0.007,-0.008,0.033,0.065,0.062,-0.06,0,0.024,0.004,0.046,0.054,0.021,0.081,0.016,0.038,0.044,-0.15,-0.021,0.01,0.017,-0.004,0.072,-0.123,-0.051,-0.091,-0.063,-0.106,-0.059,-0.107,0.137,-0.059,-0.062,-0.003,0.046,0.043,0.02,-0.046,-0.02,0.032,-0.021,-0.039,-0.018,0.049,0.011,0.017,0.01,0.043,-0.015,0.007,-0.092,-0.027,-0.048,0.02,0.011,0.055,-0.014,-0.01,-0.038,-0.016,-0.004,0.077,0.041,-0.034,0.057,0.02,-0.008,0.046,-0.015,-0.026,0.001,0.004],
+  /* kb-117 */ [-0.05,0.035,0.134,-0.003,-0.038,-0.08,-0.059,0.046,-0.106,-0.056,0.001,0.033,0.077,-0.015,-0.076,-0.001,0.056,0.031,-0.036,-0.026,0.021,0.007,-0.037,0.003,-0.006,0.095,-0.024,0.012,0.027,-0.091,0.011,-0.02,-0.107,-0.13,0.065,0.025,-0.008,0.005,0.051,0.055,0.056,-0.103,-0.013,-0.088,0.012,0.048,0.032,-0.023,0.039,0.091,0.086,-0.013,0.057,-0.059,-0.024,-0.02,-0.034,-0.04,-0.002,-0.033,0.011,0.003,-0.02,-0.003,-0.026,0.001,-0.035,-0.071,-0.019,0.056,-0.085,0.014,-0.026,0.021,-0.045,0.036,0.007,-0.084,-0.048,0.031,-0.028,-0.05,0.033,0.05,0.054,0.102,0.07,-0.05,-0.007,-0.032,0.042,0.045,0.044,0.036,-0.021,0.048,-0.015,0.096,-0.07,0.096,-0.048,-0.029,-0.033,-0.079,-0.004,-0.107,-0.063,0.025,-0.022,0.031,0.004,0.018,-0.041,0.013,-0.052,0.008,-0.013,-0.051,-0.049,-0.1,0.021,0.053,0.008,0.022,-0.032,0.039,0.024,0,-0.023,-0.03,-0.051,-0.077,0.045,0.017,-0.055,0.034,0.07,0.084,0.004,0.07,-0.007,-0.047,-0.078,-0.053,0.098,-0.006,-0.026,-0.108,0.016,0.011,-0.018,0.076,-0.012,0.054,-0.056,-0.062,0.054,0.026,0.05,-0.008,0.045,-0.028,-0.057,0.023,0.008,-0.019,-0.029,-0.127,0.026,0.07,0.019,-0.016,-0.057,-0.032,0.029,0.036,0.018,-0.054,0.013,0.054,0.032,0.152,-0.043,-0.012,-0.002,-0.083,-0.052,0.004,0.027,0.067,0.031,-0.033,0.021,-0.026,0.091,0.079,0,-0.108,0.017,0.006,0.042,0.003,-0.058,-0.051,0.061,-0.002,-0.003,-0.036,0.108,0.001,0,0.011,0.045,-0.014,0.047,-0.028,0.052,0.025,-0.132,-0.109,-0.075,0.008,0.01,0,0.073,-0.001,0.046,0.107,0.015,-0.004,0.131,0.066,-0.027,-0.01,-0.019,-0.034,-0.023,-0.015,0.054,0.026,-0.028,-0.038,0.018,-0.044,0.024,0.099,0.053,0.077,0.029,-0.01,0.02,0.024,-0.09,0,-0.037,0.036,0.036,-0.053,-0.062,0.025,-0.015,0.106,0.027,-0.007,0.057,-0.09,0.011,0.028,0.039,-0.018,-0.033,-0.027,-0.031,0.044,0.012,-0.068,0.067,0.088,-0.01,0.007,0.074,-0.065,-0.127,0.031,0.033,0.032,-0.076,0.117,0.033,0.042,0.019,-0.031,-0.017,0.014,-0.031,-0.007,0.092,-0.067,0.066,-0.078,-0.057,-0.002,-0.018,-0.084,-0.083,-0.043,0.003,-0.013,0.007,0.018,0.012,0.048,-0.028,0.022,-0.044,-0.054,0.019,0.049,-0.049,0,0.037,0.059,0.065,0.065,-0.006,-0.007,0.026,0.078,-0.008,-0.083,0.027,0.033,0.037,0.004,-0.034,-0.01,-0.001,0.015,-0.034,-0.131,-0.013,0.003,0.156,-0.013,0,0.006,0.09,0.025,-0.034,0.005,-0.011,-0.028,0.011,-0.025,0.057,0.038,-0.041,0.019,-0.01,0.099,-0.112,0.009,-0.033,-0.007,0.012,-0.003,-0.073,0.056,0.071,0.017,0.009,0.054,0.035,-0.004,-0.049,-0.014,0.009,0.019,-0.038,0.029,-0.019,-0.055,-0.029,-0.028],
+  /* kb-118 */ [0.029,0.159,-0.08,0.045,0.059,-0.024,0.014,0.062,-0.013,0.053,0.041,-0.049,0.108,0.046,0.025,0.013,0.025,-0.011,-0.028,-0.034,-0.018,-0.067,0.074,-0.008,0.03,0.051,0.011,-0.023,-0.08,-0.053,-0.036,0.002,0.01,-0.049,0.048,0.083,-0.017,0.046,0,-0.088,0.038,0.025,0.001,0.027,0.003,0.065,0.018,0.049,0.066,0.012,0.116,0.005,-0.043,0.068,-0.119,-0.032,-0.029,0.017,0.002,-0.062,0.003,0.011,0.001,0.02,-0.034,-0.03,0.014,0.075,-0.041,0.07,-0.05,0.07,-0.063,-0.079,-0.048,0.01,0.03,0.017,-0.036,0.085,-0.002,-0.053,0.057,0.015,0.059,0.031,0.072,-0.021,-0.001,0.013,-0.013,0.054,-0.018,-0.02,-0.088,0.065,-0.04,0.019,-0.038,0.021,0.103,0.01,0.054,0.034,0.031,-0.079,0.044,0.044,0.028,-0.009,-0.048,-0.04,-0.012,0.023,-0.003,0.098,-0.051,0.024,0.124,0.026,0.07,0.088,0.1,0.017,0.058,0.056,0.092,0,-0.028,0.004,0.003,0.056,-0.063,0,-0.006,0.054,-0.003,-0.02,0.018,-0.02,0.041,0.001,0.016,-0.068,-0.08,-0.055,0.04,-0.004,-0.064,-0.098,-0.007,0.085,-0.002,0.025,0.098,-0.008,-0.033,0.024,-0.016,0.027,-0.033,0.037,-0.014,0.079,0.023,0.079,0.02,-0.081,-0.001,0.014,-0.001,-0.069,0.03,-0.037,0.032,0.008,-0.057,0.005,-0.049,-0.058,-0.011,-0.01,-0.099,0.006,0.035,-0.047,0.007,-0.07,-0.032,-0.008,-0.001,-0.015,-0.066,-0.032,-0.064,-0.047,-0.109,-0.055,0.087,-0.06,0.102,-0.023,-0.033,0.062,-0.028,-0.04,-0.063,-0.037,0.021,-0.13,-0.094,0.011,0.026,-0.057,-0.045,0.041,0.002,0.009,0.046,-0.068,0.014,-0.052,0.065,0,0.135,0.031,0.077,0.025,0.029,0.037,-0.028,-0.038,-0.024,-0.016,-0.171,0.044,0.022,0.016,0.102,0.015,-0.037,-0.016,0.082,0.012,-0.035,-0.024,-0.011,0.053,0.042,0.057,-0.026,0.048,-0.018,-0.024,-0.111,-0.057,0.037,-0.008,-0.084,0.029,-0.04,-0.022,0.028,0.04,0.044,-0.041,-0.044,-0.021,0.067,-0.004,-0.077,0.029,0.028,0.069,-0.036,0.027,-0.117,0.011,-0.055,0.019,0.03,0.021,-0.091,-0.085,0.024,-0.002,0.03,0.034,-0.177,-0.068,0.101,0.07,-0.033,0.048,-0.036,0.038,0.006,-0.068,-0.02,-0.024,0.019,0.028,0.038,-0.066,-0.029,0.038,-0.049,0.003,0.01,-0.095,-0.01,-0.053,-0.049,-0.01,0.012,-0.013,-0.055,0.131,-0.023,0,-0.017,0.008,0.057,0.01,0.04,-0.034,0.025,0.082,0.02,-0.052,0.062,-0.005,0.006,0.016,-0.019,0.03,0.079,0.035,-0.031,-0.035,-0.075,-0.031,0.028,-0.013,0.022,0.037,0.069,0.014,0.093,-0.011,-0.09,0.036,0,-0.056,-0.024,-0.021,0.025,-0.044,0.002,-0.008,-0.01,-0.025,-0.036,-0.052,-0.019,-0.011,-0.017,-0.029,-0.025,0.067,-0.067,-0.025,-0.061,0.084,-0.036,0.075,-0.083,0.004,-0.011,0.011,-0.027,0.015,-0.094,-0.025],
+  /* kb-119 */ [-0.06,0.01,-0.084,-0.063,-0.085,0.033,-0.021,-0.03,-0.095,-0.084,0.121,-0.037,-0.064,-0.053,-0.048,0.064,-0.043,0.03,0.119,-0.043,-0.012,-0.036,-0.039,0.042,-0.058,-0.009,0.056,-0.022,-0.003,0.01,0.028,0.041,0.024,-0.095,0.039,-0.014,0.09,0.011,0.011,-0.091,0.019,0.061,0.003,-0.093,0.017,-0.076,-0.019,-0.067,-0.033,0.006,0.004,0.06,-0.055,-0.015,0.002,0.067,0.064,-0.004,0.014,-0.012,-0.032,-0.003,0.013,-0.003,0.022,-0.012,0.011,-0.017,0.042,0.071,-0.021,-0.048,-0.027,-0.061,0.01,-0.057,-0.024,-0.029,0.044,0.001,-0.114,0.011,0.05,0.012,0.039,0.045,0.061,-0.026,0.048,-0.002,0.015,0.057,-0.024,-0.031,0.06,-0.026,0.009,-0.001,-0.031,0.029,0.038,-0.006,-0.025,0.017,-0.1,0.008,-0.071,0.03,-0.08,-0.022,0.045,0.055,-0.007,0.002,0.049,0.012,-0.071,-0.04,-0.056,0.005,-0.063,-0.017,-0.048,0.101,0.032,-0.008,0.009,0,0.039,-0.022,-0.06,0.024,0.005,0.036,-0.041,-0.023,-0.059,0.063,0.068,-0.086,-0.063,0.01,-0.014,-0.076,-0.006,0.014,-0.034,-0.04,0.016,0.035,0.027,-0.058,0.046,0.021,0.021,0.041,0.008,0.022,0.007,-0.087,0.015,0.007,0.053,0.059,-0.068,-0.038,-0.008,0.034,0.033,-0.006,-0.057,-0.097,-0.013,0.01,0.082,0.04,0.07,0.034,0.018,-0.028,0.028,-0.054,-0.056,-0.116,0.015,0.048,0.048,0.12,0.015,0.038,-0.003,0.108,0.062,0.009,-0.003,-0.092,-0.01,-0.054,-0.069,0.014,0.077,0.05,0.009,0.026,-0.019,-0.017,-0.002,-0.001,0.008,0.009,-0.027,0.012,0.03,-0.018,-0.041,-0.03,0.12,0.002,-0.012,-0.083,-0.095,0.064,0,0,-0.041,-0.052,0.152,-0.032,-0.091,0.077,0.024,-0.06,0.048,-0.001,0.012,0.03,-0.062,0.027,0.035,-0.001,0.046,-0.045,-0.001,0.001,0.058,0.011,0.007,0.121,-0.027,0.004,0.029,0.029,0.024,0.019,-0.031,0.012,0.056,-0.022,0.016,0,0.026,0.138,0.042,-0.058,-0.108,0.118,-0.015,-0.03,-0.029,0.044,-0.029,-0.004,-0.008,0.052,-0.05,-0.013,0.055,-0.085,-0.05,-0.055,-0.091,0.002,0.092,0.001,0.035,0.024,0.002,-0.089,0.042,-0.062,0.066,-0.058,-0.132,0,-0.023,0.076,0.036,-0.021,0.019,-0.057,-0.083,-0.047,0.035,-0.031,0.104,-0.065,0.052,-0.008,-0.037,0.078,-0.012,0.013,0.059,-0.1,0.004,0.017,0.049,0.037,0.006,0,0.028,-0.053,-0.007,0.014,0.016,0.006,0.003,0.005,0.1,-0.085,0.045,-0.041,-0.035,0.052,0.043,-0.02,-0.123,0.01,-0.021,-0.084,-0.066,-0.049,0.05,-0.003,0.031,-0.083,0.035,0.101,0.114,-0.004,0.044,-0.019,0.017,0.111,0.038,0.002,-0.014,0.134,0.096,0.057,0.003,0.093,0.007,-0.034,-0.088,-0.063,-0.061,-0.072,-0.021,0.037,0.05,0.001,-0.044,-0.059,-0.043,0.013,-0.026,0.003,-0.067,0.026,-0.006,-0.056,-0.018,-0.022],
+  /* kb-120 */ [-0.063,-0.046,0.066,-0.001,-0.044,-0.035,-0.021,-0.129,-0.025,-0.015,0.053,-0.044,-0.025,-0.023,-0.029,0.001,-0.08,0.051,0.021,0.032,-0.026,0.027,-0.073,0.077,0.068,-0.026,0.028,-0.053,-0.038,-0.165,-0.04,0.023,-0.195,-0.016,0.01,-0.011,-0.002,-0.032,0.054,-0.039,0.028,0.023,-0.011,-0.042,-0.009,0.035,0.052,0.027,0.042,0.01,-0.044,0.11,0.113,0.026,-0.026,0.031,0.105,0.052,0.035,-0.061,0,0.048,-0.012,-0.014,-0.051,0.039,-0.002,0.026,0.06,0.027,0.068,0.044,-0.012,0.07,0.068,-0.006,0.022,-0.038,0.004,0.047,-0.065,-0.063,0.007,0.044,0.082,-0.056,0.006,0.006,-0.056,0.039,0.044,-0.013,0.004,0.007,0.054,0.017,-0.007,-0.007,-0.021,0.016,-0.015,-0.015,0.07,0.109,0.023,0.021,0.037,-0.021,-0.038,0.013,0.029,0.055,-0.028,0.069,-0.02,0.01,-0.064,-0.054,-0.063,-0.07,0.006,0.064,-0.047,0.028,0.033,0.061,0.065,0,0.029,-0.034,-0.002,0.024,-0.06,-0.036,-0.074,0.032,-0.018,-0.015,-0.047,0.026,0.017,0.033,0.002,-0.07,0.043,-0.015,0.053,0.028,0.062,0.016,-0.064,-0.013,-0.04,0.1,0.023,0.007,-0.033,0.022,-0.019,-0.04,0.047,-0.051,0.067,0.011,0.063,0.026,-0.028,-0.027,-0.008,-0.018,-0.058,-0.019,0.017,-0.007,0.096,0.063,-0.131,0.121,0.022,-0.028,-0.008,0.054,-0.024,-0.034,0.05,-0.075,0.015,0.045,0.102,-0.022,0.027,-0.021,0.132,-0.016,0.009,0.037,0.003,-0.076,-0.04,-0.129,0.09,0.042,0.055,-0.005,-0.191,-0.078,0,-0.012,0.075,-0.022,0.072,-0.041,0.03,0.023,-0.006,-0.019,-0.021,0.065,0.052,0.013,0.066,0.061,0.089,0,-0.042,0.004,0.073,0.044,0.032,-0.024,-0.035,0.028,0.019,-0.054,0.021,0.005,-0.078,0.074,0.029,-0.035,0.02,0.02,0.044,0.012,0.053,-0.027,-0.078,0.017,0.062,0.014,0.026,0.072,-0.018,0.025,0.035,0.048,0.054,0.005,0.032,0.066,-0.051,0.109,0.037,-0.065,-0.056,0.036,0.055,-0.041,0.025,-0.03,-0.064,-0.03,-0.011,0.108,0.026,0.022,0.046,-0.045,-0.032,0.001,-0.121,0.017,0.068,0.012,0.054,0.032,-0.045,-0.063,0.034,-0.07,0.003,-0.058,0,-0.04,0.1,0.035,0.022,-0.008,0.006,-0.042,-0.076,-0.053,0.074,-0.01,0.083,-0.098,-0.022,0.016,-0.159,0.069,-0.054,0.056,-0.026,-0.071,-0.014,-0.068,-0.047,0.047,-0.035,0,0.011,-0.014,0.002,0.033,-0.002,-0.001,0.01,-0.053,-0.011,-0.037,-0.027,-0.018,-0.008,0.003,-0.001,-0.101,-0.056,-0.068,-0.065,-0.065,-0.013,0.002,-0.025,-0.021,-0.007,0.01,0.009,-0.012,0.091,-0.018,0.057,0.039,0.031,-0.037,-0.066,0.03,0.055,0.085,0.054,-0.097,-0.042,-0.085,0.014,-0.044,-0.09,-0.043,-0.03,-0.015,-0.022,-0.02,0.045,-0.002,-0.006,0.001,-0.016,-0.053,0.016,0.023,-0.034,0.011,0.003,-0.094,-0.081,0.085],
+  /* kb-121 */ [0.003,-0.048,-0.031,-0.025,-0.048,-0.043,-0.117,0.081,0,0.048,-0.049,0.021,0.063,0.006,-0.061,0.058,0.013,0.063,0.016,0.032,-0.045,-0.031,-0.016,0.048,-0.119,-0.029,0.057,0.058,-0.043,-0.016,-0.028,-0.005,0.026,-0.04,-0.012,-0.023,0.008,-0.045,0,-0.063,0.044,-0.043,-0.037,-0.046,0.128,0.083,0.038,-0.007,0.056,0.021,0.073,-0.057,0.005,0.029,-0.056,-0.016,-0.072,-0.019,0.107,-0.054,0.02,0.005,-0.033,0.035,-0.06,0.001,-0.006,-0.105,-0.038,0.101,-0.043,0.024,-0.013,-0.109,-0.011,-0.063,0.084,0.056,0.054,0,-0.091,0.015,-0.043,0.089,0.094,0.017,0.056,0.034,-0.022,0.018,0.064,0.036,-0.086,0.086,0.001,-0.002,0.026,0.014,-0.04,0.035,0.006,-0.043,0.049,0.038,0.013,-0.044,0.017,0.041,0.064,0.016,-0.03,0.008,0.028,0.081,0.031,0.103,-0.087,-0.047,-0.059,-0.02,-0.118,0.042,-0.025,0.012,-0.069,0.066,0.014,0,0.008,0.006,0.068,-0.022,-0.051,-0.009,-0.017,0.069,-0.063,0.096,0.076,-0.003,0.058,-0.049,-0.049,-0.022,-0.005,-0.029,-0.074,0.017,0.032,-0.055,-0.001,0.018,-0.006,0.01,-0.053,-0.065,-0.098,0.019,-0.1,-0.031,0.042,-0.082,-0.025,-0.026,0.079,0.073,0.007,-0.023,-0.006,0.021,0.034,-0.029,0.074,0.066,0.063,0.025,0.009,0.035,-0.06,0.075,0.146,0.043,-0.031,0.022,0.051,-0.004,-0.048,-0.007,0.052,-0.006,0.008,0.001,-0.063,-0.046,-0.03,-0.015,0.06,0.048,0.022,0.001,0.099,0.05,-0.047,0.047,-0.031,0.037,-0.025,-0.032,0.011,0.001,-0.036,0.03,0.033,-0.046,-0.031,0.024,-0.039,0,-0.029,-0.056,0.024,-0.008,0.067,0,0.03,0.095,0.036,0.028,-0.034,-0.058,0.041,-0.022,0.003,-0.001,0.018,-0.006,-0.108,0.006,0.076,0.005,-0.098,-0.04,0.07,-0.005,0,0.009,-0.02,-0.007,0.055,0.005,0.082,0.021,-0.071,0.008,-0.091,-0.024,-0.003,0.004,-0.058,0.107,-0.061,0.053,0.055,0.025,0.012,0.03,-0.033,-0.01,0.02,-0.035,-0.031,0.048,0.04,0.085,-0.002,0.067,0.063,0.012,0.027,-0.023,-0.067,-0.054,-0.091,-0.051,-0.062,0.059,0.001,-0.037,-0.032,0.128,-0.04,0.029,-0.021,0.023,-0.194,-0.055,0.038,-0.005,0.066,-0.086,0.048,0.015,0.049,-0.022,0.034,-0.045,0.061,-0.029,-0.038,0.082,-0.051,0.001,-0.033,-0.034,-0.033,0.093,-0.016,-0.023,-0.002,0,-0.112,-0.075,-0.005,0.049,-0.014,0.051,-0.028,-0.028,-0.049,-0.012,0.008,-0.05,0.07,-0.009,-0.005,0.034,-0.047,0.041,-0.053,-0.064,-0.11,-0.033,0.063,-0.024,0.097,-0.081,0.021,-0.063,-0.069,0.056,0.07,0.013,-0.006,-0.03,0.078,0.079,-0.063,0.025,-0.012,0.004,-0.101,0.041,0.05,0.02,-0.065,-0.014,0.081,0.041,0.064,-0.011,0.013,-0.017,0.056,-0.004,-0.008,0.046,-0.037,0.025,-0.02,0.082,-0.048,-0.018,-0.071,-0.04],
+  /* kb-122 */ [-0.025,0.193,-0.023,0.04,0.055,0.007,-0.003,0.025,-0.034,0.065,0.008,0.025,0.083,0.059,0.015,0.032,-0.059,0.025,-0.038,0.006,0.016,-0.002,0.032,0.021,0.024,-0.004,-0.018,-0.01,-0.028,-0.011,0.023,0.034,-0.033,-0.079,0.034,0.133,0.051,0.031,0.035,-0.051,-0.009,0.096,0.017,-0.036,-0.011,0.078,0.086,0.007,0.058,-0.003,0.1,0.065,0.058,0.022,-0.083,-0.041,-0.001,-0.035,-0.005,-0.042,0.078,0.022,-0.025,0.037,-0.009,0,0.104,0.077,0.039,0.031,-0.054,0.033,-0.095,-0.068,-0.032,0.016,0.01,-0.076,-0.001,0.033,-0.019,-0.049,0.077,0.007,0.044,0.106,0.11,-0.014,-0.001,0.033,-0.074,-0.001,0.018,-0.013,-0.051,0.022,0.008,0.006,-0.038,0.076,0.132,-0.074,0.087,0.02,-0.022,-0.046,-0.001,0.013,-0.006,0.004,-0.031,0.045,0.014,0.032,-0.045,0.06,-0.032,0.019,0.025,0.063,0.098,0.05,0.036,0.063,0.049,0.03,0.072,0,-0.025,-0.028,0.033,0.003,-0.01,-0.027,-0.018,0.034,-0.026,0.018,0.083,-0.004,0.01,-0.015,0.039,-0.073,0.017,-0.038,0.084,0.015,-0.021,-0.103,0.039,0.054,0.055,-0.014,0.094,0,-0.047,0.011,0.033,-0.041,-0.008,0.059,0.025,-0.007,0.004,0.054,-0.039,-0.102,-0.015,0.016,-0.022,-0.005,0.05,-0.036,-0.001,0.046,-0.12,0.022,-0.008,-0.004,-0.044,-0.009,-0.096,0,0.027,-0.141,0,-0.032,0.004,0.058,0.003,-0.009,-0.009,-0.089,-0.031,-0.022,-0.074,-0.091,-0.002,-0.063,0.049,0.008,-0.044,0.043,-0.076,-0.044,-0.042,-0.022,0.052,-0.126,-0.073,0.028,0.009,-0.118,-0.016,-0.022,-0.001,0.042,0.023,-0.112,0.039,-0.015,0.061,0,0.059,0.006,0.068,-0.006,-0.054,0.023,-0.073,-0.039,-0.094,-0.019,-0.138,0.025,-0.021,0.025,0.057,0.028,0.019,0.022,0.027,0.01,0,-0.028,-0.034,0.092,-0.008,0.034,-0.055,0.025,-0.045,-0.024,-0.133,-0.017,0.048,-0.041,-0.079,0.003,-0.008,-0.058,-0.006,0.003,0.04,0.024,-0.023,0.001,0.064,-0.035,-0.119,-0.039,0.074,0.012,0.024,0.019,-0.032,-0.085,0.008,-0.031,-0.005,-0.014,-0.065,0.018,-0.01,-0.044,-0.021,0.068,-0.143,-0.121,0.047,-0.015,-0.08,0.027,-0.003,0.089,0.065,-0.018,0.002,-0.064,0.022,-0.018,0.015,-0.056,0.013,-0.01,-0.006,0.014,-0.009,-0.114,0.016,-0.045,-0.006,-0.071,-0.004,0.017,-0.064,0.061,0.018,0,0,0.013,0.015,-0.049,-0.051,0.027,0.131,0.04,0.078,-0.033,0.032,0.024,-0.006,0.031,-0.07,0.034,-0.017,0.012,-0.021,0.006,-0.038,-0.079,0.018,0.059,0.028,-0.105,0.097,-0.001,0.106,0.089,-0.088,-0.001,0.007,-0.046,-0.081,-0.041,-0.016,0.032,-0.007,0.024,-0.062,0.045,-0.096,-0.012,0.009,-0.029,-0.012,0.024,-0.071,0.033,0.051,-0.025,0.016,0.07,-0.004,0.06,-0.042,0.013,-0.006,-0.034,-0.069,-0.019,-0.07,-0.048],
+  /* kb-123 */ [-0.073,-0.033,0.131,0.03,0.008,-0.054,-0.063,-0.021,-0.063,-0.075,0.018,0.07,0.007,-0.017,-0.047,0.031,-0.006,0.09,0.025,-0.065,0.027,-0.021,-0.029,0.018,-0.069,-0.018,0.065,-0.009,-0.03,-0.032,0.037,0.051,-0.012,-0.008,-0.051,0.063,0.019,0.002,0.035,-0.016,0.122,0.01,0.026,-0.034,0.028,-0.023,-0.044,-0.02,0.016,-0.017,0.051,-0.043,0.054,-0.002,0.017,-0.021,0.003,-0.057,0.044,0.037,0.006,0.05,-0.031,0.008,-0.003,-0.033,0.104,0.07,0.019,0.113,-0.019,0.048,-0.089,0.07,0.046,0.016,-0.048,-0.091,-0.03,-0.041,-0.089,-0.011,0.061,0.018,0.051,0.109,0.002,-0.056,0.041,0.057,0.002,0.041,-0.059,-0.043,-0.036,0.026,-0.03,0.038,-0.004,0.043,0.022,-0.04,-0.019,-0.025,-0.099,0.037,-0.009,0.046,-0.09,-0.011,-0.002,0.029,-0.041,-0.02,-0.05,-0.027,0.034,0.072,-0.065,0.064,0.026,-0.006,0.024,0.04,-0.014,-0.068,0.101,0,0.018,-0.069,-0.019,0.043,0.001,0.021,-0.031,-0.027,-0.001,0.063,0.091,0.058,-0.056,0.024,0.022,-0.071,0.01,-0.022,0.015,-0.024,0.066,-0.002,0.017,-0.005,0.041,-0.014,0.022,-0.009,0.02,0.035,0.049,-0.051,-0.028,0.093,-0.028,0.073,-0.035,-0.012,-0.026,-0.047,-0.038,-0.03,-0.06,-0.093,-0.09,0.05,0.011,-0.018,0.055,0.054,0.104,0.037,0.052,-0.133,-0.048,0.057,0.055,-0.091,0.005,-0.02,0.007,0.063,0,-0.003,0.016,-0.031,0.041,0.021,-0.014,-0.076,-0.056,-0.044,0.045,0.033,0.004,-0.022,-0.035,-0.057,-0.061,-0.017,-0.055,-0.017,-0.092,0.011,0.023,0.026,-0.035,0.079,0.091,0.057,-0.01,-0.049,0.014,0.072,0.027,0,0.047,0.023,0.123,0.056,-0.114,0.026,0.09,0.06,-0.059,0.045,-0.013,0.005,-0.103,-0.03,0.063,0.078,-0.022,0.079,-0.015,-0.037,0.047,0.031,0.027,0.111,-0.001,-0.014,-0.011,0.121,-0.082,-0.01,-0.025,0.018,0.077,-0.128,-0.096,0.053,0.034,0.047,0,-0.031,0.046,-0.028,-0.025,0.003,-0.052,-0.018,-0.058,-0.059,0.042,0.044,0.051,-0.002,-0.007,-0.054,0.034,-0.022,0.02,-0.037,-0.009,0.028,-0.059,0.026,-0.074,0.09,-0.031,-0.106,0.047,-0.053,-0.027,0,-0.035,0.126,-0.003,-0.032,0.005,-0.078,-0.033,-0.114,-0.089,0.006,0.072,-0.066,-0.013,0.067,-0.056,-0.062,0.001,0.002,0.076,-0.063,0.019,0.003,0.042,-0.01,-0.065,0,-0.039,-0.021,0.088,-0.019,-0.052,-0.02,0.026,0.135,-0.004,-0.073,0.04,0.012,-0.019,0.057,0.058,-0.038,-0.034,0.031,-0.03,-0.078,0.003,-0.037,0.06,0.124,0,-0.048,0.05,0.031,0.037,-0.027,-0.008,0.003,0.002,0.007,-0.053,0.002,-0.065,0.032,-0.016,0.111,-0.086,0.092,-0.057,-0.021,-0.042,-0.075,-0.069,0.011,-0.043,0.047,0.028,0.006,-0.049,0.048,-0.048,-0.09,-0.004,-0.009,-0.027,-0.048,-0.047,0.005,0.066,-0.07],
+  /* kb-124 */ [-0.064,-0.103,0.006,-0.006,-0.043,-0.028,0.058,0.029,0.034,-0.003,0.069,-0.035,-0.043,0.047,-0.012,0.016,0.002,-0.023,0.042,-0.005,0.001,0.023,-0.023,-0.004,-0.06,0.029,-0.015,0.069,0.094,0.03,-0.021,0.125,-0.026,0.061,0.003,0.03,-0.049,-0.008,-0.011,-0.059,0.054,-0.037,0.06,-0.104,0.083,-0.035,0.087,-0.004,0.025,0.011,-0.015,-0.049,0.089,-0.021,0.011,-0.032,0.076,0.041,0.024,-0.016,0.077,-0.069,0.033,0.019,0.065,-0.061,0.011,-0.049,-0.017,0.097,-0.049,-0.026,-0.05,0.03,-0.004,-0.165,-0.009,-0.021,-0.04,-0.052,-0.127,-0.014,0.02,0.029,-0.035,-0.035,0.039,-0.002,0.091,0.002,-0.002,0.014,-0.037,-0.033,-0.053,-0.022,0.04,-0.039,-0.041,0.039,-0.09,0.066,0.006,0.034,-0.071,-0.014,-0.036,-0.013,-0.071,0.027,-0.015,0.039,-0.029,0.03,-0.014,-0.059,-0.011,0.023,0.006,0.05,0.018,-0.073,-0.054,-0.02,0.095,0.003,-0.035,0,0.026,0.031,-0.079,-0.078,0.008,-0.073,0.01,-0.011,0.046,0.048,0.106,0.025,0.055,0.013,0.041,-0.022,0.004,-0.033,-0.018,-0.011,0.017,0.081,0.023,0.014,-0.03,-0.002,-0.023,-0.028,0.039,0.019,0.052,0.02,-0.076,0,0.04,-0.003,0.009,-0.022,-0.045,0.016,-0.06,-0.073,-0.038,-0.016,0.043,-0.041,0.054,0.032,0.071,-0.019,0.075,-0.019,0.077,-0.061,-0.035,0.034,0.056,-0.05,-0.095,0.072,0.027,-0.137,0.033,-0.062,0.01,-0.01,-0.026,0.005,0.048,-0.008,-0.059,0.037,0.063,-0.012,-0.026,-0.006,0.023,-0.013,0.045,0.034,-0.049,-0.065,0.024,-0.075,0.003,0.049,-0.057,-0.143,-0.01,-0.057,-0.064,-0.026,-0.014,0.011,-0.013,0,-0.027,0.075,-0.016,0.117,-0.019,-0.058,-0.051,0.064,-0.104,-0.037,-0.056,-0.015,-0.073,0.058,-0.025,0.073,0.038,-0.011,-0.004,-0.021,0.059,0.038,0.098,-0.004,0.008,-0.002,0.019,-0.045,-0.024,0.043,0.013,-0.073,0.053,-0.057,-0.023,0.051,-0.016,-0.008,-0.047,-0.03,0.044,-0.007,0.013,0.047,-0.043,-0.065,-0.041,0.151,-0.047,0.06,0.082,0.067,0.035,0.062,-0.006,0.05,0.054,-0.057,-0.012,0.019,-0.045,-0.01,-0.07,0.076,0.069,-0.061,0.038,-0.068,0.027,0.038,-0.006,0.054,0.036,-0.106,-0.02,0.057,0.005,-0.153,-0.012,-0.041,-0.065,-0.033,0.044,0.052,-0.101,-0.056,-0.065,0.002,0.06,-0.043,0.071,-0.042,0.052,0.039,-0.025,0,0.015,-0.032,0.005,-0.007,0.131,-0.009,0.003,-0.072,-0.013,0.016,-0.011,-0.027,-0.07,0.033,0.067,0.064,0.015,0.071,-0.102,-0.044,0.002,-0.108,0.03,0.043,-0.041,0.034,-0.127,0.027,0.024,-0.004,-0.011,0.022,0.089,-0.069,0.037,0.061,-0.055,-0.084,0.041,0.057,0.038,0.116,-0.004,0.064,-0.01,-0.03,-0.069,-0.069,0.048,0.008,0.028,-0.027,0.02,0.082,-0.056,0.028,0.003,0.009,0.019,0.103,0.046,0.077,0.013,-0.037],
+  /* kb-125 */ [-0.062,-0.067,0.145,-0.027,0.024,-0.033,-0.031,-0.033,-0.052,0.009,0.054,0.047,0.027,-0.002,0.011,-0.061,0.04,0.001,-0.024,-0.021,0.03,0.039,-0.013,0.068,-0.094,0.076,0.02,-0.014,-0.017,0.032,-0.033,0.076,0.034,-0.006,-0.001,-0.02,-0.006,-0.069,-0.007,-0.09,-0.022,-0.044,-0.031,-0.051,0.104,-0.001,0.072,-0.052,0.044,0.07,0.008,-0.032,0.141,-0.014,0.022,-0.062,-0.026,-0.02,-0.022,0.011,0.113,-0.045,0.004,0.038,0.005,0.02,0.003,-0.006,0.036,0.093,-0.033,-0.011,-0.057,0.084,-0.016,-0.024,-0.018,0.007,-0.001,-0.048,-0.069,-0.058,0.068,-0.082,0.009,-0.099,0.065,-0.004,-0.05,-0.079,0.022,-0.075,0.037,0.007,-0.022,0.023,-0.08,0.031,0.052,0.033,-0.053,0.003,0.066,0.01,-0.003,0.009,0.035,-0.001,-0.059,0.055,-0.026,0.037,0.029,0.024,0.046,-0.045,-0.09,0,0.051,-0.021,0.061,0.019,-0.005,0.038,0.078,-0.09,-0.018,0,0.032,0.019,0.033,-0.079,-0.02,-0.028,0.034,-0.069,0.099,0.066,0.074,-0.03,0.002,-0.129,0.122,0.033,-0.048,-0.039,0.01,0.047,-0.033,-0.065,0.065,0.087,0.054,-0.039,-0.031,-0.064,0.049,0.031,0.009,0.089,0.039,0.041,-0.057,0.014,0,-0.019,-0.034,0.006,-0.01,-0.122,-0.005,-0.036,0.055,-0.066,0.008,0.028,-0.002,-0.064,-0.049,0.023,-0.046,0.003,-0.027,0.032,0.083,-0.057,-0.058,0.058,-0.055,-0.06,0.061,-0.085,-0.081,0.048,-0.004,0.026,-0.101,-0.073,-0.037,-0.033,-0.09,0.047,0.009,-0.023,-0.008,0.006,0.027,-0.005,-0.08,-0.025,0.007,0.019,-0.015,0.018,0.079,-0.019,0.058,0.047,-0.013,0.009,-0.025,0.098,0.074,0,-0.039,0.109,0.079,0.062,-0.038,0.008,-0.068,0.01,-0.039,-0.046,-0.094,-0.004,-0.118,-0.035,-0.013,0.087,0.11,-0.065,0.049,-0.043,0.066,0.034,0.068,-0.107,-0.095,0.036,-0.037,0.006,0.068,0.002,-0.026,0.064,-0.029,-0.064,0.043,0.031,-0.011,-0.002,0,-0.036,0.055,-0.031,0.045,0.023,0.001,-0.059,-0.019,-0.03,-0.009,-0.08,0.084,0.028,0.065,0.052,-0.001,0.027,-0.037,0.029,-0.021,-0.011,0.001,0.087,-0.035,-0.102,0.01,-0.032,0.011,-0.01,0.131,-0.069,-0.014,-0.049,-0.097,-0.027,-0.028,0.035,-0.122,-0.119,-0.033,0.04,0.044,0.029,-0.005,0.063,-0.029,-0.037,-0.01,-0.019,-0.007,-0.003,0.041,0.022,-0.041,0.022,-0.005,0,-0.054,0.045,0.007,-0.041,0.1,-0.075,0.032,0.041,-0.017,0.045,-0.014,-0.053,0.027,-0.016,-0.04,0.029,-0.063,0.082,-0.044,-0.053,-0.016,-0.019,-0.019,0.023,-0.085,-0.007,0.047,-0.009,-0.011,0.055,-0.018,0.027,0.079,-0.015,0.002,-0.091,0.029,-0.044,0.041,-0.05,-0.039,0.047,0.065,0.094,0.052,-0.069,-0.038,-0.043,0.038,0,0.006,0.01,0.013,0.056,-0.018,0.027,0.019,0.044,0.065,0.029,-0.078,-0.078,0.084,0.036],
+  /* kb-126 */ [-0.003,-0.074,0.028,-0.028,-0.041,-0.002,0.055,-0.065,0.038,-0.023,0.001,-0.034,0.103,-0.037,-0.066,0.041,-0.006,0.037,0.087,-0.026,0.057,0.057,-0.048,0.05,0.022,0.065,0.022,-0.034,0.019,0.047,-0.034,0.047,0.055,0.008,-0.001,0.009,0.015,0.001,0.033,-0.026,0.022,0.005,0.087,-0.126,0.076,0.018,0.069,-0.049,-0.018,0.039,0.021,-0.071,0.083,0.015,0.004,0.006,0.082,0.009,0.055,0.006,0.098,0.013,-0.007,0.08,-0.036,-0.03,0.034,-0.012,0.024,0.041,-0.019,-0.005,-0.037,0.023,0.02,-0.061,-0.022,-0.057,-0.026,-0.008,-0.083,-0.025,0.066,-0.104,0.064,-0.052,0.121,-0.012,-0.013,-0.002,-0.078,-0.067,-0.051,0.007,0.005,0.065,-0.035,0.006,0.063,0.018,-0.038,0.031,0.095,0.027,-0.03,0.051,0.005,0.021,-0.058,0.056,-0.105,0.033,-0.001,0.027,0.033,0.021,-0.051,0,-0.064,0.025,0.091,-0.026,-0.106,0.008,0.109,-0.019,-0.128,0,0,0.001,0.047,-0.058,0.02,-0.097,-0.054,-0.083,0.069,0.043,0.085,0.013,0.079,-0.016,0.047,-0.067,0.015,-0.023,0.029,0.028,-0.023,0.035,-0.022,0.056,0.048,-0.028,0.041,-0.042,0.011,0.016,0.02,-0.018,-0.04,0.022,0.026,-0.048,0.015,0.039,-0.065,-0.009,0.015,-0.14,-0.134,0.009,0.039,0.029,0.008,0.065,0.018,0.014,0.056,0.016,0.052,0.043,-0.018,0.01,0.116,-0.145,-0.101,0.006,-0.02,-0.048,0.057,-0.077,-0.026,-0.044,-0.043,-0.07,0.018,-0.057,-0.003,-0.001,-0.002,0.049,-0.009,-0.011,-0.09,0.004,-0.052,0.012,-0.011,-0.124,-0.04,-0.021,-0.003,0.021,0.004,-0.077,0.005,-0.064,0.023,-0.046,0.013,0.086,-0.005,0,-0.015,0.087,0.057,0.086,-0.055,0.035,0.036,-0.018,-0.042,-0.061,-0.023,-0.035,-0.063,0.053,-0.003,0.044,0.075,-0.017,0.086,0.021,0.032,0.029,0.084,-0.054,-0.013,0.038,-0.022,0.028,0.027,0.001,-0.071,-0.004,0.036,-0.039,-0.038,0.071,-0.1,-0.036,0.009,-0.089,-0.033,-0.017,0.055,0.055,0.013,-0.064,-0.019,0.108,0.001,-0.017,0.076,0.096,0.089,0.018,0.04,0.062,-0.032,0.017,0.061,-0.072,-0.073,0.058,-0.043,0.013,-0.036,-0.078,-0.02,-0.017,0.022,-0.005,-0.014,0.069,-0.002,-0.033,-0.028,-0.006,-0.05,-0.155,-0.049,-0.021,0.01,-0.049,0.075,0.099,-0.16,-0.06,-0.071,-0.012,0.045,-0.044,0.04,0.074,0.025,-0.009,0.043,0,-0.034,-0.041,-0.021,-0.066,0.151,-0.029,0.028,-0.021,-0.019,-0.056,-0.004,-0.048,-0.028,0.051,0.021,0.041,-0.018,0.056,-0.038,-0.095,-0.034,-0.029,-0.003,0.067,0,-0.039,-0.005,0.003,-0.049,0.026,0.007,0.05,0.006,-0.049,-0.019,0.058,-0.013,-0.03,0.044,-0.03,-0.046,0.063,0.024,-0.006,-0.064,-0.037,-0.031,-0.099,0.046,-0.011,-0.002,0.02,0.026,0.023,-0.002,0.045,-0.046,-0.014,0.019,0.074,-0.059,0.041,0.046,-0.048],
+];
+
+const QUERY_VECS = {
+  "E020": [-0.068,0.106,0.009,0.005,0.011,-0.002,0.1,0.048,-0.061,0.006,0.064,-0.046,0.02,0.005,-0.006,-0.012,0.011,-0.075,-0.082,-0.059,0.057,-0.052,-0.017,-0.022,-0.072,-0.001,-0.01,0.063,-0.017,-0.098,0.107,-0.016,0.037,0.01,-0.024,-0.025,0.017,-0.006,-0.025,-0.064,-0.048,-0.063,0.047,0.001,0.1,0.021,0.005,0.035,0.002,-0.015,0.075,-0.025,-0.028,0.01,0.051,0.027,-0.03,-0.005,0.024,-0.013,0.072,-0.087,0.007,0.033,-0.024,0.046,0.089,-0.076,-0.039,0.031,-0.03,-0.002,-0.019,0.017,-0.015,0.027,0.025,-0.001,0.031,0.075,0.013,-0.108,-0.044,-0.086,-0.015,0.025,0.016,-0.008,0.03,0.013,-0.087,-0.019,0,0.06,-0.029,0.011,0.004,-0.006,-0.095,0.147,-0.008,0.12,-0.028,0.046,-0.035,0.002,0.096,0.073,-0.032,-0.046,-0.057,-0.05,-0.056,-0.05,0.047,-0.022,-0.065,0.038,0.124,-0.046,0.04,-0.023,-0.048,-0.006,-0.097,-0.04,-0.04,0,0.026,-0.001,-0.063,0.073,0.07,0.057,0.003,0.025,-0.013,-0.081,-0.004,0.049,0.027,0.064,0.069,-0.064,0.008,0.076,-0.043,-0.016,0.011,-0.049,0.06,-0.001,0.021,0.116,-0.016,-0.053,0.078,0.04,0.019,-0.068,-0.08,0.034,0.009,-0.024,0.009,0.022,0.094,-0.058,0.008,0.083,-0.024,0.048,-0.016,-0.035,0.089,0.012,0.058,-0.004,-0.037,0.008,-0.086,-0.028,-0.031,-0.065,-0.005,0.018,0.012,-0.007,0.033,0.167,-0.027,-0.07,0.047,0.062,0.067,-0.078,0.009,-0.055,-0.011,-0.01,0.112,0.041,0.004,0.012,-0.041,-0.061,-0.078,0.038,-0.08,0.05,-0.09,0.036,-0.013,-0.031,-0.071,-0.035,0.076,0.024,0.046,-0.053,0.112,0.056,-0.057,0,0.011,-0.009,-0.022,0.035,0.003,0.042,0.07,0.042,0.048,0.097,0.076,0.039,0.063,0.051,0.02,-0.022,-0.025,-0.012,0.079,-0.011,0.047,0.11,-0.029,-0.005,-0.028,0.096,0.048,0.046,-0.021,-0.043,0.003,-0.057,0.055,0.052,-0.061,0.05,0.065,-0.045,0.007,-0.072,0.07,0.047,-0.052,0.088,-0.027,0.005,-0.055,0.073,0.049,0.023,0.006,0.068,-0.064,0.03,-0.042,-0.003,-0.021,0.014,-0.08,-0.002,0.022,0.028,0.024,0.053,-0.029,-0.037,0.002,-0.017,-0.01,-0.024,0.052,-0.03,-0.056,-0.081,-0.001,-0.006,-0.077,-0.042,-0.007,-0.066,-0.045,-0.015,-0.001,0.037,-0.008,-0.056,-0.011,-0.013,0.016,-0.025,0.005,-0.002,-0.025,0.057,0.006,0,-0.03,0.052,0.076,-0.031,0.036,-0.013,-0.04,-0.002,0.043,-0.001,0.029,-0.036,0.038,0.031,0.025,-0.016,-0.057,0.055,-0.021,0.019,-0.041,-0.012,0.035,-0.108,0,-0.092,0.057,0.021,-0.043,-0.031,-0.079,0.087,-0.083,0.046,-0.025,-0.005,-0.045,0.069,-0.061,0.003,0.006,-0.071,0.001,0,-0.017,0.004,0.012,-0.111,-0.113,-0.105,-0.088,0.036,-0.005,0.022,-0.04,-0.005,-0.082,-0.026,0.009,0.109,0.108,0.011,-0.119,-0.006],
+  "my bike has a puncture": [0.084,0.068,0.024,-0.005,-0.027,-0.053,0.075,0.053,0.004,-0.026,0.008,-0.047,-0.023,0.085,-0.059,-0.02,-0.038,-0.08,0.069,0.013,-0.032,0.133,-0.015,0.014,-0.033,-0.02,0.038,0.009,-0.026,-0.024,-0.049,-0.046,-0.06,-0.051,0.066,-0.057,-0.038,0.041,0.001,-0.049,0.04,0.046,-0.007,-0.05,0.142,0.118,0.048,-0.035,0.079,0.037,0.013,-0.018,0.072,0.008,-0.099,-0.023,-0.057,-0.009,0.033,-0.053,0,-0.053,-0.018,0.051,0.036,-0.057,0.098,-0.022,0.047,0.099,0.032,0.066,0.026,-0.044,-0.022,0.012,-0.023,0.002,-0.012,0.059,-0.082,-0.025,0.029,-0.01,0.049,0.028,0.12,-0.021,-0.037,-0.07,-0.033,0.063,-0.019,0.112,-0.032,-0.024,-0.001,0.001,-0.048,0.115,0.016,-0.062,-0.027,-0.014,0.059,0.025,-0.061,0.023,0.062,-0.003,0.033,0.061,0.073,0.015,0.01,0.026,-0.04,0.043,0.072,0.012,-0.012,0.026,-0.063,-0.017,0.025,-0.058,-0.007,0,0.034,0.065,-0.003,-0.054,-0.067,-0.034,-0.056,-0.015,-0.081,-0.095,-0.013,-0.009,0.023,-0.126,-0.046,0.031,0.039,-0.017,-0.047,0.007,0.001,-0.056,-0.004,-0.003,0.002,0.008,0.037,-0.07,-0.074,0.037,0.034,-0.003,0.066,0.05,0.032,0.049,0.023,0.046,-0.081,-0.066,-0.007,-0.073,-0.012,0.053,0.068,-0.062,-0.049,0.064,-0.127,-0.022,-0.042,0.039,0.041,0.022,-0.101,-0.016,0.065,-0.03,-0.038,0.043,0.019,-0.004,-0.043,0.052,-0.014,0.031,0.001,-0.039,0.04,-0.072,-0.059,0.022,0.042,0.068,-0.117,0.049,-0.073,-0.014,-0.054,0.008,-0.026,-0.159,-0.028,0.023,-0.017,-0.051,0.015,-0.013,0.001,-0.03,-0.006,-0.032,0.006,-0.028,0.052,0,0.017,0.047,0.026,0.075,0.088,-0.052,0.063,-0.015,-0.104,-0.04,-0.008,0.015,0.015,0.018,0.001,0.054,0.025,0.016,0.003,-0.04,-0.058,0.095,0.046,-0.058,0.07,0.04,-0.015,-0.121,-0.049,0.052,-0.044,0.007,-0.032,0.009,-0.04,0.123,0.004,-0.087,0.039,-0.043,-0.051,0.006,0.035,0.037,-0.028,0.018,0.055,0.012,0.069,0.067,0.038,0.067,0.129,-0.005,0.052,0.031,-0.022,-0.107,-0.107,0,0.004,0.093,0.03,0.028,0.046,-0.139,0.009,-0.026,0.016,0.003,-0.045,0.093,0.016,0.006,0.004,0.056,0.004,-0.003,-0.035,0.019,0.086,0.01,0.093,0.098,0.083,-0.037,0.01,-0.009,-0.053,-0.009,0.025,0.084,-0.034,0.021,-0.02,0,0.035,-0.06,-0.121,-0.066,0.061,-0.006,0.01,-0.014,-0.057,-0.073,-0.042,0.008,-0.012,0.014,-0.061,-0.049,-0.04,-0.022,-0.038,-0.057,-0.073,-0.055,0.026,-0.054,0.026,0.026,0.002,0.013,-0.028,0.05,-0.006,0.028,-0.032,-0.02,-0.076,0.06,-0.033,0.085,0.001,-0.042,-0.036,0.071,0.051,0.046,-0.053,-0.033,0.007,-0.037,0.034,0.014,0.037,-0.015,0.024,0.047,-0.01,0.058,0.018,-0.079,-0.023,0.037,-0.052,-0.013,0.09,-0.054],
+  "lever goes soft after a while": [-0.022,-0.109,0.045,0.059,-0.085,-0.062,-0.003,-0.026,0.018,0.02,-0.026,-0.015,-0.015,0.032,-0.028,0.027,-0.038,-0.057,-0.028,0.025,0.031,-0.064,0.013,0.031,-0.059,0.04,0.001,0.002,0.102,-0.082,-0.113,-0.018,-0.098,-0.072,0.055,0.076,-0.033,-0.008,-0.018,-0.043,0.009,-0.011,0.034,-0.033,0.087,0.131,0.05,-0.006,0.111,-0.035,-0.02,-0.032,0.132,-0.116,0.001,-0.031,0.072,-0.012,0.054,0.029,0.004,-0.022,-0.015,-0.012,0.02,0.033,-0.002,-0.047,-0.03,-0.018,0.028,-0.051,-0.082,0.029,0.095,-0.114,-0.01,-0.014,-0.018,0.059,-0.005,0.009,-0.027,-0.007,-0.03,-0.058,0.089,-0.114,-0.002,0.068,0.033,0.066,-0.031,0.092,0.045,0.028,0.035,0.031,-0.063,0.071,-0.067,0.1,0.036,-0.024,0.04,-0.003,0.027,0.045,-0.031,0.015,-0.053,0.087,-0.002,0.066,-0.003,-0.053,-0.043,-0.006,-0.087,-0.025,0.019,-0.045,-0.086,-0.031,-0.036,0.046,0.03,0,0.022,-0.102,-0.075,0.011,-0.095,0.005,0.023,0.068,-0.092,-0.005,0.09,-0.044,-0.116,-0.1,0.001,-0.072,0.044,-0.001,-0.064,0.03,-0.006,-0.022,-0.027,0.038,-0.018,0.059,0.021,0.025,0.004,0.024,0.002,0.017,-0.035,-0.022,-0.06,-0.05,0.052,0.015,-0.039,-0.094,-0.107,0.046,-0.038,0.031,-0.019,-0.024,-0.03,0.099,0.002,0.057,0.04,0.038,0.009,0.059,-0.115,0.018,0.01,-0.012,-0.148,-0.011,-0.01,-0.036,0.125,0.004,0.095,0.046,-0.04,0.087,0.012,-0.051,-0.063,-0.07,-0.01,-0.024,-0.037,-0.063,0.113,-0.077,-0.01,0.021,0.058,0.054,0.049,0.023,-0.022,0.065,0.034,-0.067,0.031,0.083,-0.105,-0.028,0.02,0.036,-0.02,0,0.036,-0.01,-0.026,0.031,0.055,0.005,-0.09,0.047,-0.066,0.065,0.044,-0.016,-0.054,0.031,0.006,0.063,0.048,-0.01,-0.056,0.104,0.088,0.077,0.016,0.01,0.018,0.021,-0.07,0.06,-0.044,-0.008,-0.009,-0.021,-0.008,0.007,-0.026,-0.018,0,0.041,-0.026,-0.036,0.019,0.072,0.036,0.029,0.005,-0.013,0.031,-0.087,-0.035,0.125,0.063,-0.004,0.082,0.046,0.008,-0.006,-0.009,-0.064,-0.029,0.025,0.018,0.047,-0.003,-0.003,0.066,0.007,0.083,-0.057,0.012,-0.04,0.088,0.053,0.046,-0.009,0.04,0.039,-0.031,-0.12,-0.059,-0.055,0.052,0.001,0.048,0.026,-0.062,-0.035,0.015,0.022,0.01,0.081,0.002,0.012,0.029,-0.01,0.006,0,0.016,0,0.024,0.034,0.045,-0.009,-0.077,-0.002,-0.074,-0.07,0.009,-0.009,0.046,0.004,0.003,-0.067,-0.068,0.006,-0.017,-0.03,-0.028,-0.049,0.113,0,-0.034,-0.024,-0.078,0.055,-0.018,-0.013,0.061,0.035,0.021,-0.019,-0.103,0.027,-0.015,0.008,-0.014,-0.006,0.004,0.042,-0.031,0.011,-0.091,0.017,-0.05,0.054,0.114,0.099,0.004,0.03,0.03,0.014,-0.014,0.002,0.052,-0.014,0.004,0.021,-0.013,0.003,-0.042,0.015],
+  "M8100": [-0.106,0.09,0.042,0.03,-0.026,0.011,0.014,0.1,-0.072,-0.012,0.037,-0.051,0.085,0.03,-0.059,0.028,0.105,-0.047,-0.054,0.015,0.008,0.028,0.041,0.012,-0.047,0.009,0.015,0.097,0.01,-0.055,0.044,0.044,0.047,0.012,0.042,-0.024,-0.004,0.015,-0.018,-0.027,-0.037,-0.043,0.138,-0.063,0.087,0.051,0.085,0.02,0.042,0.056,-0.01,-0.031,-0.07,0.047,-0.008,-0.034,-0.032,0.013,0.029,-0.025,0.025,-0.009,-0.013,0.031,0.115,0.044,-0.039,-0.043,0.006,0.031,0.037,-0.014,-0.08,0,-0.035,0.017,0.042,0.003,0.065,0.026,0.055,-0.165,-0.045,-0.063,0.043,-0.014,0.042,0.076,-0.022,-0.016,-0.112,0.001,-0.019,-0.003,-0.012,0.013,-0.058,-0.026,-0.072,0.168,0.015,0.028,-0.049,0.065,0.007,0.007,0.057,0.06,0.006,-0.075,-0.009,0.007,-0.036,-0.029,0.05,-0.083,-0.058,0.051,0.105,-0.014,-0.051,-0.099,-0.048,-0.048,-0.004,-0.003,-0.097,0,0.029,0.022,0.01,0.043,0.063,-0.019,0.031,-0.022,0.008,-0.032,-0.067,0.004,-0.037,0.075,0.036,-0.072,0.079,-0.01,-0.03,0.009,-0.014,0.029,0.091,0.018,0.071,0.098,0.04,-0.016,0.048,0.008,-0.01,-0.014,-0.049,-0.082,-0.004,-0.07,-0.069,-0.047,0.004,-0.038,-0.017,0.065,-0.037,-0.031,-0.026,0.025,-0.02,0.042,0.017,-0.019,0.02,-0.014,-0.121,-0.024,-0.071,-0.084,0.023,0.063,-0.009,0.002,0.036,0.077,0.004,0.009,0.007,0.002,0.04,0.008,0.016,-0.014,-0.009,-0.047,0.098,0.052,0.014,0.024,-0.024,-0.034,-0.066,0.007,0.001,0.101,-0.07,0.022,-0.003,-0.046,0.008,-0.115,0.04,0.016,0.037,-0.04,0.083,0.088,-0.156,0,-0.059,0.056,0.047,0.078,-0.056,-0.029,0.092,0.044,-0.023,-0.014,-0.001,-0.02,0.082,-0.019,-0.004,-0.006,0.03,0.011,0.051,-0.047,0.046,0.073,0.017,-0.035,-0.051,-0.024,0.007,0.088,0.007,-0.049,0.01,-0.015,-0.014,0.041,-0.009,0.087,0.095,-0.025,0.02,0.001,0.131,0.03,-0.058,0.17,-0.088,0.011,-0.019,-0.007,0.056,0,-0.045,-0.055,-0.011,0.034,0.014,0.028,-0.006,-0.012,0.008,-0.002,0.07,0.022,-0.048,0.026,-0.071,0.057,0.014,-0.047,-0.066,0.012,0.098,-0.02,-0.003,0.009,0.092,-0.046,-0.054,0.02,0.042,-0.043,-0.074,-0.031,-0.038,0.025,0.016,-0.043,0.095,-0.056,0.063,-0.053,0.008,0.012,-0.009,0.032,0.007,0,0.035,-0.055,0.08,-0.071,0.004,-0.028,-0.063,0.001,0.005,0.008,0.075,-0.07,-0.038,0.043,0.002,0.013,-0.012,0.024,-0.03,0.004,-0.02,0.024,0.081,-0.034,0.003,-0.045,-0.081,0.088,0.007,-0.029,0.011,0.048,-0.068,-0.01,-0.079,-0.001,0.007,0.094,0.019,-0.044,0.082,-0.085,-0.029,0.037,-0.048,-0.034,-0.011,-0.061,-0.087,0.012,0.042,-0.002,-0.019,0.01,-0.04,-0.076,0.02,0.018,-0.012,0.03,0.083,-0.021,-0.093,-0.107],
+  "my brakes make a horrible noise after riding in the rain": [0.014,-0.107,0.102,0.014,-0.015,-0.066,0.054,-0.027,-0.024,-0.025,-0.067,-0.049,0.02,0.025,-0.093,0.08,0.005,0.015,0.032,0.012,-0.024,0.033,-0.024,0.088,-0.027,0.069,0.061,0.022,0.006,-0.026,0.019,0.02,0.112,-0.027,0.017,-0.006,-0.044,0.001,0.034,-0.106,0.02,0.045,0.051,-0.091,0.108,-0.019,0.102,-0.063,0.126,0.049,0.076,-0.005,0.089,-0.032,-0.034,-0.112,0.038,-0.006,0.022,-0.04,0.046,0.022,-0.065,0.039,0.013,0.051,-0.015,0.027,-0.012,0.058,-0.108,0.113,0.018,0.061,-0.001,-0.007,-0.008,0.029,0.001,0.019,-0.048,-0.066,0.054,-0.016,0.085,-0.043,0.087,-0.054,0.046,-0.042,-0.057,-0.044,0.001,0.102,-0.108,0.07,-0.009,-0.066,0.057,0.089,-0.065,0.013,0.002,-0.016,0.026,-0.002,0.045,0.012,-0.014,0.039,-0.049,0.009,-0.043,0.062,-0.004,-0.008,-0.102,0.056,-0.022,-0.031,-0.027,-0.029,-0.026,0.054,0.041,-0.021,-0.014,0,0.053,-0.074,0.032,0.038,0.082,-0.082,-0.035,-0.059,-0.019,0.013,0.016,-0.051,0.039,-0.133,0.103,0.002,-0.057,-0.08,0.008,0.025,-0.041,-0.05,-0.026,0.088,0.048,0.016,0.007,0.019,0.105,0.023,-0.022,-0.006,0.153,0.041,0.06,0.053,0.028,0.067,0.028,-0.042,0.014,-0.115,-0.034,-0.059,0.07,-0.064,0.043,0.004,0.009,-0.045,0.04,0.026,-0.013,-0.025,-0.043,0.027,0.158,0.012,-0.041,0.045,-0.092,0.024,0.093,-0.113,0.007,-0.014,-0.018,0.001,0,-0.098,-0.016,0.003,0.018,0.06,-0.032,-0.04,-0.052,-0.028,-0.005,0.027,-0.003,-0.04,-0.034,0.052,-0.044,0.09,0.037,-0.028,0.023,0.021,-0.016,0.058,0.05,-0.072,0.004,0,0.019,0.025,0.044,0.009,-0.03,0.025,0.065,0.048,-0.016,0.028,0.036,-0.025,-0.135,0.002,0.013,-0.008,0.077,0.029,0.03,-0.041,0.014,0.073,0.142,-0.073,-0.072,0.036,0.022,0.053,-0.01,0.027,-0.078,0.061,-0.055,-0.043,0.001,0.035,-0.109,-0.072,-0.069,-0.057,-0.066,-0.016,0.109,-0.067,0.03,-0.029,0.022,0.086,-0.025,0,0.052,0.038,0.025,0.065,0.049,-0.059,0.051,-0.075,0.012,-0.002,-0.032,0.047,-0.046,-0.041,-0.017,-0.038,-0.062,0.037,0.037,-0.012,-0.012,-0.025,-0.013,-0.038,-0.036,0.013,-0.043,-0.009,-0.005,-0.038,-0.053,0.038,-0.01,0.114,-0.079,-0.085,-0.065,-0.026,0.002,0.001,-0.021,0.038,0.073,0.003,-0.051,0,-0.061,0.001,-0.064,-0.005,0.039,-0.08,-0.035,-0.04,-0.054,-0.094,0.041,-0.009,0.007,0.074,-0.052,-0.037,0.06,-0.016,-0.051,-0.105,-0.063,-0.015,-0.014,0.006,0.072,-0.021,0.012,-0.057,-0.012,0.044,-0.019,-0.001,-0.01,-0.025,0.011,0.007,0,-0.026,0.057,-0.007,-0.041,0.02,0.021,-0.004,-0.008,0.024,-0.003,0.028,0.076,0.024,-0.05,0.019,-0.005,-0.031,0.021,0.01,-0.066,-0.04,-0.028,0.026,-0.029,-0.041,-0.008,0.004],
+  "how much sealant do I need for a 29 inch tyre": [0.016,0.016,-0.036,-0.076,-0.004,-0.099,0,0.135,-0.043,0.003,-0.034,-0.053,0.029,0.053,-0.005,0.044,-0.031,0.039,-0.075,-0.063,0.053,0.026,0.013,-0.007,-0.059,-0.025,0.029,-0.014,0.053,-0.004,-0.024,-0.033,0.048,-0.033,0.031,-0.022,-0.04,-0.002,0.047,-0.02,0.045,-0.03,-0.009,-0.004,-0.073,-0.062,0.029,0.085,0.063,0.024,0.061,-0.017,-0.099,0.013,-0.054,-0.073,-0.083,0.037,-0.03,-0.02,0.117,0.015,-0.014,0.02,-0.062,-0.034,0.029,-0.075,-0.026,0.038,-0.04,0.018,0.032,-0.091,-0.021,0.005,-0.024,-0.059,-0.077,-0.034,-0.008,-0.014,0.054,-0.056,0.018,-0.041,0.084,0.029,0.066,0.048,0.023,-0.034,-0.051,-0.024,-0.009,-0.018,0.04,0.001,-0.07,0.038,-0.069,-0.043,-0.029,0.046,0.027,0.064,0.012,-0.038,0.011,0.107,0.001,0.061,0.016,0.038,0.024,-0.006,-0.008,0.04,0.064,0.046,0.046,0.031,0.003,-0.004,-0.027,0.041,-0.013,0,-0.09,0.072,-0.005,0.037,-0.048,0.051,0.103,0.005,-0.057,0.003,0.004,-0.014,-0.034,-0.061,-0.06,0.061,0.006,0.002,-0.06,-0.065,-0.115,-0.051,-0.043,0.038,-0.019,-0.12,0.016,0,-0.001,-0.02,-0.016,0.02,0.13,0.077,0.034,-0.002,-0.046,-0.016,0.028,-0.086,-0.006,0.044,0.079,-0.054,-0.001,-0.048,0.033,0.048,0.021,-0.007,0.034,0.113,-0.087,0.021,-0.039,-0.01,0.006,-0.023,-0.071,0.004,-0.059,-0.022,0.084,0.02,0.049,0.041,-0.076,0.005,-0.091,0.005,-0.057,-0.082,0.044,0.006,-0.105,0.013,0.083,-0.059,0.024,-0.107,-0.005,-0.044,-0.052,-0.05,-0.065,-0.011,-0.032,0.093,0.033,-0.005,-0.063,-0.046,0.003,-0.022,-0.006,0,0.009,0.04,0.034,0.1,0.04,0.052,0.106,-0.003,-0.008,-0.038,-0.013,0.035,0.083,-0.002,-0.064,0.028,-0.057,-0.037,0.003,0.008,-0.04,0.046,-0.081,0.055,-0.026,-0.032,0.004,-0.01,-0.032,-0.017,0.038,-0.061,0.004,0.026,-0.029,-0.017,0.055,-0.018,-0.01,0.038,-0.007,-0.117,-0.019,-0.071,-0.056,-0.015,0.126,-0.122,0.004,-0.044,0.058,0.01,-0.021,0.084,0.009,0.065,-0.042,0.053,-0.027,-0.021,0.01,0.073,-0.008,-0.082,0.005,-0.046,-0.082,0.051,0.006,0.061,-0.101,0.057,0.04,0.022,-0.032,-0.11,0.044,-0.103,0.059,0.04,-0.083,0.028,-0.042,0.031,0.127,-0.021,0.055,0.022,0.074,0.08,0.043,0.004,0.021,-0.041,-0.01,0,0.013,0.029,-0.047,0.036,-0.02,-0.028,0.073,-0.019,-0.061,0.002,0.025,-0.059,0.044,0.036,-0.013,-0.058,0.031,0.01,-0.014,-0.075,0.02,-0.064,0.005,-0.024,0.004,0.013,0.088,0.134,-0.081,0.068,-0.025,-0.037,0.042,-0.007,0.065,0.07,0.006,-0.025,0.056,0.035,0.046,0.051,0.051,0.052,0.067,0.099,-0.098,0.074,-0.003,0.062,0.094,0.028,0.013,0.038,0.067,0,-0.043,0.087,-0.041,-0.023,-0.036,0.001,0.029,-0.126],
+};
+
+// Real cross-encoder logits from Xenova/ms-marco-MiniLM-L-6-v2 (quantised).
+const CROSS_SCORES = {
+  "E020": [-11.33,-10.21,-9.06,8.71,-2.11,-11.24,-11.15,-11.34,-11.19,-11.31,-11.31,-11.37,-11.27,-11.19,-11.27,-11.33,-11.34,-8.9,-11.2,-11.23,-11.32,-11.29,-11.29,-11.28,-11.29,-11.4],
+  "my bike has a puncture": [-10.92,-11.14,-11.27,-11.23,-11.25,-10.98,-11.12,-10.63,-11.16,-11.25,-11,-11.06,-11.22,-11.28,-11.03,-11.25,-11.22,-11.29,-11.31,-11.05,-10.98,-10.38,-11.15,-11.03,-10.95,-8.24],
+  "lever goes soft after a while": [-2.96,-11.34,-11.44,-11.43,-11.43,-10.56,-11.35,-11.15,-7.14,-11.33,-11.11,-11.38,-11.35,-11.39,-11.32,-11.37,-11.35,-11.01,-11.4,-11.29,-11.32,-11.35,-11.31,-6.77,-11.39,-11.33],
+  "M8100": [-11.36,7.26,6.88,-9.05,-10.49,-11.18,-11.22,-11.35,-11.16,-11.28,-11.31,-11.35,-11.16,-11,-11.31,-11.35,-11.35,-11.29,-11.15,-11.26,-11.31,-11.32,-11.33,-11.19,-11.35,-11.39],
+  "my brakes make a horrible noise after riding in the rain": [-11.22,-11.17,-11.23,-11.22,-11.28,7.52,-10.42,-0.89,-9.45,-11.24,-11.13,-10.69,-11.13,-11.22,-10.8,-11.22,-11.18,-10.77,-11.26,-11.17,-11.04,-11.19,-10.87,-11.08,2.6,-3.5],
+  "how much sealant do I need for a 29 inch tyre": [-11.09,-11.32,-11.4,-11.37,-11.4,-11.28,-11.09,-11.29,-11.3,-11.39,-11.31,-11.34,7.58,-11.35,-11.25,-11.37,-11.31,-11.39,-11.37,-11.38,-11.33,-11.27,-11.31,-11.26,-11.3,-11.33],
+};
+
+
+// ════════════════════════════════════════════════════════════════════
+// §2 · CHUNKING
+// ════════════════════════════════════════════════════════════════════
+(() => {
+  const ARTICLE = "Tubeless tyres seal small holes on their own, but only while there is live sealant inside them. Setting one up starts with the rim tape: it has to cover the spoke holes completely and sit flat, because every wrinkle is a slow leak waiting to happen. Tape the rim twice if the channel is deep, overlapping the join by about ten centimetres so it cannot lift. Fit the tyre dry, leave the valve core out, and seat the bead with a single burst from a tank pump or an air compressor. You will hear two loud pops as the bead snaps into place. Only once the bead is seated do you add liquid. A 29 by 2.4 inch tyre takes 120 ml of sealant. Top it up every three to four months, sooner in hot weather. Refit the valve core, inflate to riding pressure, and spin the wheel to spread the sealant around the casing. Check the pressure again the next morning: a tubeless tyre that holds overnight on the first night will usually hold all season. If it does not, the leak is almost always the tape or the valve, not the tyre.";
+  const ANSWER  = "A 29 by 2.4 inch tyre takes 120 ml of sealant. Top it up every three to four months, sooner in hot weather.";
+
+  const words = ARTICLE.split(' ');
+  const aw = ANSWER.split(' ');
+  let A0 = -1;
+  for (let i = 0; i + aw.length <= words.length; i++) {
+    if (words.slice(i, i + aw.length).join(' ') === ANSWER) { A0 = i; break; }
+  }
+  const A1 = A0 + aw.length - 1;
+
+  const sizeEl = document.getElementById('ck-size');
+  const ovEl   = document.getElementById('ck-ov');
+  const sizeV  = document.getElementById('ck-size-v');
+  const ovV    = document.getElementById('ck-ov-v');
+  const docEl  = document.getElementById('ck-doc');
+  const statEl = document.getElementById('ck-stats');
+  const diagEl = document.getElementById('ck-diag');
+
+  const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  function chunksFor(size, overlap) {
+    const stride = Math.max(1, size - overlap);
+    const out = [];
+    for (let s = 0; s < words.length; s += stride) {
+      out.push({ start: s, end: Math.min(words.length - 1, s + size - 1) });
+      if (s + size >= words.length) break;
+    }
+    return out;
+  }
+
+  function render() {
+    const size = +sizeEl.value;
+    // overlap can never reach the chunk size or the stride collapses
+    ovEl.max = Math.max(0, Math.floor(size / 2));
+    const overlap = Math.min(+ovEl.value, +ovEl.max);
+    ovEl.value = overlap;
+
+    sizeV.textContent = size + ' words';
+    ovV.textContent = overlap + ' words';
+
+    const chunks = chunksFor(size, overlap);
+
+    // which chunk(s) cover each word
+    const cover = words.map(() => []);
+    chunks.forEach((c, ci) => { for (let i = c.start; i <= c.end; i++) cover[i].push(ci); });
+
+    docEl.innerHTML = words.map((w, i) => {
+      const cls = ['w'];
+      if (cover[i].length > 1) cls.push('ov');
+      else cls.push(cover[i][0] % 2 === 0 ? 'c0' : 'c1');
+      if (i >= A0 && i <= A1) cls.push('ans');
+      return `<span class="${cls.join(' ')}">${esc(w)}</span>`;
+    }).join(' ');
+
+    // best chunk = the one holding most of the answer
+    let best = null, bestCount = -1;
+    chunks.forEach((c, ci) => {
+      const held = Math.max(0, Math.min(c.end, A1) - Math.max(c.start, A0) + 1);
+      if (held > bestCount) { bestCount = held; best = ci; }
+    });
+    const intact = chunks.some(c => c.start <= A0 && c.end >= A1);
+    const bestChunk = chunks[best];
+    const bestLen = bestChunk.end - bestChunk.start + 1;
+    const density = bestCount / bestLen;
+    const held = bestCount / aw.length;
+
+    statEl.innerHTML = `
+      <div class="stat"><span class="sl">chunks</span>
+        <span class="sv">${chunks.length}</span></div>
+      <div class="stat"><span class="sl">answer intact?</span>
+        <span class="sv" style="color:var(--${intact ? 'good' : 'bad'})">${intact ? 'yes' : 'no'}</span></div>
+      <div class="stat"><span class="sl">best chunk holds</span>
+        <span class="sv" style="color:var(--${held === 1 ? 'good' : held > 0.6 ? 'warn' : 'bad'})">${Math.round(held * 100)}<span class="su">% of the answer</span></span></div>
+      <div class="stat"><span class="sl">signal density</span>
+        <span class="sv" style="color:var(--${density > 0.45 ? 'good' : density > 0.25 ? 'warn' : 'bad'})">${Math.round(density * 100)}<span class="su">% of that chunk</span></span></div>
+      <div class="stat"><span class="sl">index size</span>
+        <span class="sv">${(chunks.length * 1.5).toFixed(1)}<span class="su">KB of vectors</span></span></div>`;
+
+    let tag, msg;
+    if (!intact && aw.length > size) {
+      tag = '<span class="tag bad">too small</span>';
+      msg = `A ${size}-word chunk cannot physically contain a ${aw.length}-word answer. The best chunk holds ${Math.round(held * 100)} % of it, and no amount of overlap fixes that — raise the chunk size above ${aw.length} words first.`;
+    } else if (!intact) {
+      tag = '<span class="tag bad">split on a boundary</span>';
+      msg = `The chunks are big enough, but a cut lands inside the answer: the best chunk holds only ${Math.round(held * 100)} % of it. Both halves will score mediocrely and neither is complete. Nothing in your logs would tell you this happened — add overlap.`;
+    } else if (density < 0.3) {
+      tag = '<span class="tag warn">diluted</span>';
+      msg = `The answer survives, but it is ${Math.round(density * 100)} % of a ${bestLen}-word chunk. Mean pooling averages it together with rim tape, valve cores and overnight pressure checks, so the chunk's vector is only faintly about sealant. It will rank below sharper chunks that are less useful.`;
+    } else if (overlap > 0) {
+      tag = '<span class="tag good">intact, overlap paid off</span>';
+      msg = `A ${size}-word window with ${overlap} words of overlap keeps the answer whole inside one chunk at ${Math.round(density * 100)} % density. The cost is ${chunks.length} chunks instead of ${chunksFor(size, 0).length} — roughly ${Math.round((chunks.length / chunksFor(size, 0).length - 1) * 100)} % more storage and more duplicate hits to deduplicate at read time.`;
+    } else {
+      tag = '<span class="tag good">intact</span>';
+      msg = `The answer sits whole inside one chunk at ${Math.round(density * 100)} % density. It got lucky with where the cuts landed — nudge the chunk size by a few words and watch that change.`;
+    }
+    diagEl.innerHTML = tag + msg;
+
+    document.querySelectorAll('[data-chunk-preset]').forEach(b => {
+      const [s, o] = b.dataset.chunkPreset.split(',').map(Number);
+      b.setAttribute('aria-pressed', String(s === size && o === overlap));
+    });
+  }
+
+  sizeEl.addEventListener('input', render);
+  ovEl.addEventListener('input', render);
+  document.querySelectorAll('[data-chunk-preset]').forEach(b => {
+    b.addEventListener('click', () => {
+      const [s, o] = b.dataset.chunkPreset.split(',').map(Number);
+      sizeEl.value = s;
+      ovEl.max = Math.max(0, Math.floor(s / 2));
+      ovEl.value = o;
+      render();
+    });
+  });
+  render();
+})();
+
+
+// ════════════════════════════════════════════════════════════════════
+// SHARED RETRIEVAL — BM25, cosine, RRF
+// ════════════════════════════════════════════════════════════════════
+const docText = (d) => d.title + '. ' + d.body;
+
+const STOPWORDS = new Set(('a an and are as at be but by for if in into is it no not of on or such that the their'
+  + ' then there these they this to was will with my me i you your when what how do does did has have had'
+  + ' can could would should from after before').split(' '));
+const tokenize = (s) => (String(s).toLowerCase().match(/[a-z0-9]+/g) || []).filter(t => !STOPWORDS.has(t));
+
+const DOC_TOKENS = DOCS.map(d => tokenize(docText(d)));
+const N_DOCS = DOCS.length;
+const AVGDL = DOC_TOKENS.reduce((s, t) => s + t.length, 0) / N_DOCS;
+const DF = new Map();
+for (const toks of DOC_TOKENS) for (const w of new Set(toks)) DF.set(w, (DF.get(w) || 0) + 1);
+const DOC_TF = DOC_TOKENS.map(toks => {
+  const m = new Map();
+  for (const w of toks) m.set(w, (m.get(w) || 0) + 1);
+  return m;
+});
+const K1 = 1.2, B = 0.75, RRF_K = 60, LIST_DEPTH = 10;
+
+function bm25Scores(query) {
+  const qt = tokenize(query);
+  return DOC_TOKENS.map((toks, i) => {
+    let s = 0;
+    for (const term of qt) {
+      const f = DOC_TF[i].get(term);
+      if (!f) continue;
+      const d = DF.get(term) || 0;
+      const idf = Math.log(1 + (N_DOCS - d + 0.5) / (d + 0.5));
+      s += idf * (f * (K1 + 1)) / (f + K1 * (1 - B + B * toks.length / AVGDL));
+    }
+    return s;
+  });
+}
+
+function cosine(a, b) {
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
+  return dot / (Math.sqrt(na) * Math.sqrt(nb) || 1);
+}
+const vectorScores = (qv) => DOC_VECS.map(v => cosine(qv, v));
+
+/** ranked list of {i, score}, descending, positives only, truncated */
+function rankList(scores, { positiveOnly = false, depth = LIST_DEPTH } = {}) {
+  return scores
+    .map((score, i) => ({ i, score }))
+    .filter(r => !positiveOnly || r.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, depth);
+}
+
+function fuse(lists) {
+  const acc = new Map();
+  lists.forEach(({ list, tag }) => {
+    list.forEach((r, idx) => {
+      const e = acc.get(r.i) || { i: r.i, score: 0, parts: [] };
+      const c = 1 / (RRF_K + idx + 1);
+      e.score += c;
+      e.parts.push({ tag, rank: idx + 1, contrib: c });
+      acc.set(r.i, e);
+    });
+  });
+  return [...acc.values()].sort((a, b) => b.score - a.score);
+}
+
+
+// ════════════════════════════════════════════════════════════════════
+// §5 · HYBRID SEARCH
+// ════════════════════════════════════════════════════════════════════
+const HS_PRESETS = [
+  { q: 'E020',
+    label: 'E020',
+    caption: 'An error code. <strong style="color:var(--kw)">Keyword wins:</strong> the token appears in exactly one document, so BM25 goes straight to it. The vector column is confidently wrong — it puts the <em>other</em> error-code article first, because “E020” and “E013” look almost identical to a subword tokenizer.' },
+  { q: 'my bike has a puncture',
+    label: 'my bike has a puncture',
+    caption: 'A paraphrase. <strong style="color:var(--vec)">Vector wins:</strong> the corpus never uses the word “puncture” and the target article is titled “How to fix a flat tire”, so BM25 returns literally nothing. Zero results is the honest output of a keyword index here, not a bug.' },
+  { q: 'lever goes soft after a while',
+    label: 'lever goes soft after a while',
+    caption: 'A vague symptom. <strong style="color:var(--fuse)">Fusion wins:</strong> BM25 puts the flat-tire article first, because it contains “lever” — as a <em>verb</em>, “lever the casing off the rim” — and “soft”, describing a tyre. The vector index puts the dropper-post article first (“returns slowly”, “sticky”). The article you want, on bleeding the brakes, is 3rd on one list and 2nd on the other, and only RRF puts it 1st.' },
+  { q: 'M8100',
+    label: 'M8100 (bonus)',
+    caption: 'A model number, and a counter-example. Both columns get this right, which is worth knowing: a subword tokenizer splits <code>M8100</code> into pieces that also appear in the document, so a little lexical signal leaks into the embedding. Vector search is not blind to rare tokens — just unreliable with them. Note the top cosine is 0.42, and the runner-up is 0.39.' },
+];
+
+(() => {
+  const presetsEl = document.getElementById('hs-presets');
+  const colsEl    = document.getElementById('hs-cols');
+  const capEl     = document.getElementById('hs-caption');
+  const freeEl    = document.getElementById('hs-free');
+  const loadBtn   = document.getElementById('hs-load');
+  const dot       = document.getElementById('hs-dot');
+  const msg       = document.getElementById('hs-msg');
+
+  let extractor = null;
+  let active = HS_PRESETS[0].q;
+
+  presetsEl.innerHTML = HS_PRESETS.map((p, i) =>
+    `<button class="ghost" data-hs="${i}">${p.label}</button>`).join('');
+
+  const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  function hitRow(rank, title, meta, win) {
+    return `<div class="hit${win ? ' win' : ''}">
+      <div class="rank">${rank}</div>
+      <div><div class="t">${esc(title)}</div><div class="m">${meta}</div></div>
+    </div>`;
+  }
+
+  function render(query, qv, caption) {
+    const kw = bm25Scores(query);
+    const kwList = rankList(kw, { positiveOnly: true });
+    const vecList = qv ? rankList(vectorScores(qv)) : [];
+
+    const fused = qv
+      ? fuse([{ list: kwList, tag: 'kw' }, { list: vecList, tag: 'vec' }]).slice(0, 5)
+      : [];
+
+    const kwHTML = kwList.length
+      ? kwList.slice(0, 5).map((r, i) =>
+          hitRow(i + 1, DOCS[r.i].title, `bm25 ${r.score.toFixed(3)}`, i === 0)).join('')
+      : `<div class="empty">No document contains any query term. BM25 returns 0 results.</div>`;
+
+    const vecHTML = vecList.length
+      ? vecList.slice(0, 5).map((r, i) =>
+          hitRow(i + 1, DOCS[r.i].title, `cos ${r.score.toFixed(3)}`, i === 0)).join('')
+      : `<div class="empty">Load the real model to embed this query.</div>`;
+
+    const fuseHTML = fused.length
+      ? fused.map((r, i) => {
+          const parts = ['kw', 'vec'].map(tag => {
+            const p = r.parts.find(x => x.tag === tag);
+            const glyph = tag === 'kw' ? '▲' : '●';
+            return p
+              ? `<span class="src ${tag}">${glyph}#${p.rank}</span>`
+              : `<span class="src none">${glyph}—</span>`;
+          }).join('');
+          const sum = r.parts.map(p => `1/(60+${p.rank})`).join(' + ') || '—';
+          return hitRow(i + 1, DOCS[r.i].title,
+            `${parts} ${sum} = <span style="color:var(--fg)">${r.score.toFixed(5)}</span>`, i === 0);
+        }).join('')
+      : `<div class="empty">Load the real model to fuse two lists.</div>`;
+
+    colsEl.innerHTML = `
+      <div class="col kw">
+        <div class="col-head"><span><span class="glyph">▲</span>Keyword</span><span class="sub">BM25 k1=1.2 b=0.75</span></div>
+        ${kwHTML}
+      </div>
+      <div class="col vec">
+        <div class="col-head"><span><span class="glyph">●</span>Vector</span><span class="sub">cosine · MiniLM-L6</span></div>
+        ${vecHTML}
+      </div>
+      <div class="col fuse">
+        <div class="col-head"><span><span class="glyph">★</span>Fusion</span><span class="sub">RRF k=60</span></div>
+        ${fuseHTML}
+      </div>`;
+
+    capEl.innerHTML = caption || `Live query: <code>${esc(query)}</code>. Same three strategies, same corpus.`;
+  }
+
+  function selectPreset(i) {
+    const p = HS_PRESETS[i];
+    active = p.q;
+    freeEl.value = '';
+    render(p.q, QUERY_VECS[p.q], p.caption);
+    presetsEl.querySelectorAll('button').forEach((b, j) =>
+      b.setAttribute('aria-pressed', String(i === j)));
+  }
+
+  presetsEl.querySelectorAll('button').forEach(b =>
+    b.addEventListener('click', () => selectPreset(+b.dataset.hs)));
+
+  loadBtn.addEventListener('click', async () => {
+    loadBtn.disabled = true;
+    dot.className = 'status-dot loading';
+    msg.textContent = 'Downloading all-MiniLM-L6-v2 (~25 MB, cached by your browser afterwards)…';
+    try {
+      const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2');
+      env.allowLocalModels = false;
+      env.useBrowserCache = true;
+      extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
+        progress_callback: (p) => {
+          if (p.status === 'progress' && p.file && p.total) {
+            msg.textContent = `Downloading ${p.file} — ${((p.loaded / p.total) * 100).toFixed(0)} %`;
+          }
+        },
+      });
+      dot.className = 'status-dot ready';
+      msg.textContent = 'Model ready. Type any query — it is embedded locally, exactly like the baked vectors were.';
+      freeEl.disabled = false;
+      loadBtn.textContent = 'Model loaded';
+      freeEl.focus();
+    } catch (err) {
+      dot.className = 'status-dot error';
+      msg.textContent = 'Could not load the model (offline, or the CDN is blocked): ' + err.message
+        + ' — the preset queries above still work, they need no download.';
+      loadBtn.disabled = false;
+    }
+  });
+
+  let timer = null;
+  freeEl.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const q = freeEl.value.trim();
+      if (!q) { selectPreset(0); return; }
+      if (!extractor) return;
+      presetsEl.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', 'false'));
+      const out = await extractor(q, { pooling: 'mean', normalize: true });
+      render(q, Array.from(out.data), null);
+    }, 260);
+  });
+
+  selectPreset(0);
+})();
+
+
+// ════════════════════════════════════════════════════════════════════
+// §6 · RERANKING
+// ════════════════════════════════════════════════════════════════════
+(() => {
+  const RR = [
+    { q: 'E020', label: 'E020',
+      note: 'The bi-encoder puts the <em>wrong</em> error code first — E013 outscores E020 by 0.06 cosine. The cross-encoder reads the pair together, sees that the query string occurs verbatim in one document and not the other, and separates them by more than ten logits. This is the case rerankers are made for.' },
+    { q: 'my brakes make a horrible noise after riding in the rain', label: 'brakes noisy after rain',
+      note: 'Both stages agree on the winner, and the reranking below it is a wash: the warranty article — which mentions squealing brakes and wet riding but tells you nothing about fixing them — is promoted from 3rd to 2nd. Agreement at the top is the common case. Whether the shuffling underneath is an improvement is exactly the thing you have to measure.' },
+    { q: 'my bike has a puncture', label: 'my bike has a puncture',
+      note: 'A failure. Every cross-encoder logit is deeply negative — the model considers no document relevant — and the correct article drops instead of rising. MS MARCO relevance is not your relevance.' },
+  ];
+
+  const presetsEl = document.getElementById('rr-presets');
+  const beforeEl  = document.getElementById('rr-before');
+  const afterEl   = document.getElementById('rr-after');
+  const costEl    = document.getElementById('rr-cost');
+  const noteEl    = document.getElementById('rr-note');
+  const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  presetsEl.innerHTML = RR.map((r, i) => `<button class="ghost" data-rr="${i}">${r.label}</button>`).join('');
+
+  const DEPTH = 6;
+
+  function render(idx) {
+    const { q, note } = RR[idx];
+    const cand = rankList(vectorScores(QUERY_VECS[q]), { depth: DEPTH });
+    const cross = CROSS_SCORES[q];
+    const reranked = cand
+      .map((r, i) => ({ ...r, before: i + 1, cross: cross[r.i] }))
+      .sort((a, b) => b.cross - a.cross);
+
+    beforeEl.innerHTML = cand.map((r, i) => `
+      <div class="hit${i === 0 ? ' win' : ''}">
+        <div class="rank">${i + 1}</div>
+        <div><div class="t">${esc(DOCS[r.i].title)}</div>
+             <div class="m">cos ${r.score.toFixed(3)}</div></div>
+      </div>`).join('');
+
+    afterEl.innerHTML = reranked.map((r, i) => {
+      const delta = r.before - (i + 1);
+      const cls = delta > 0 ? 'up' : delta < 0 ? 'down' : 'same';
+      const arrow = delta > 0 ? `▲ up ${delta}` : delta < 0 ? `▼ down ${-delta}` : '— unchanged';
+      return `<div class="hit${i === 0 ? ' win' : ''}">
+        <div class="rank">${i + 1}</div>
+        <div><div class="t">${esc(DOCS[r.i].title)}</div>
+             <div class="m">logit ${r.cross.toFixed(2)} <span class="move ${cls}">${arrow}</span></div></div>
+      </div>`;
+    }).join('');
+
+    const moved = reranked.filter((r, i) => r.before !== i + 1).length;
+    costEl.innerHTML = `
+      <div class="stat"><span class="sl">candidates rescored</span><span class="sv">${DEPTH}</span></div>
+      <div class="stat"><span class="sl">positions changed</span><span class="sv" style="color:var(--${moved ? 'warn' : 'fg-dim'})">${moved}</span></div>
+      <div class="stat"><span class="sl">bi-encoder work</span><span class="sv">1<span class="su">forward pass</span></span></div>
+      <div class="stat"><span class="sl">cross-encoder work</span><span class="sv">${DEPTH}<span class="su">forward passes</span></span></div>
+      <div class="stat"><span class="sl">if you skipped stage 1</span><span class="sv" style="color:var(--bad)">${DOCS.length}<span class="su">passes, per query</span></span></div>`;
+
+    noteEl.innerHTML = `<span class="tag ${idx === 2 ? 'bad' : 'good'}">${idx === 2 ? 'reranking hurt' : 'reranking helped'}</span>${note}`;
+
+    presetsEl.querySelectorAll('button').forEach((b, j) =>
+      b.setAttribute('aria-pressed', String(j === idx)));
+  }
+
+  presetsEl.querySelectorAll('button').forEach(b =>
+    b.addEventListener('click', () => render(+b.dataset.rr)));
+  render(0);
+})();
+
+
+// ════════════════════════════════════════════════════════════════════
+// §7 · RAG
+// ════════════════════════════════════════════════════════════════════
+(() => {
+  const Q = 'how much sealant do I need for a 29 inch tyre';
+  const kEl = document.getElementById('rag-k');
+  const kV  = document.getElementById('rag-k-v');
+  const box = document.getElementById('rag-prompt');
+  const stats = document.getElementById('rag-stats');
+  const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  const kwList = rankList(bm25Scores(Q), { positiveOnly: true });
+  const vecList = rankList(vectorScores(QUERY_VECS[Q]));
+  const fused = fuse([{ list: kwList, tag: 'kw' }, { list: vecList, tag: 'vec' }]);
+
+  function render() {
+    const k = +kEl.value;
+    kV.textContent = k;
+    const hits = fused.slice(0, k);
+
+    const context = hits.map((r, i) =>
+      `[${i + 1}] ${DOCS[r.i].title}\n${DOCS[r.i].body}`).join('\n\n');
+
+    const prompt =
+`Answer the question using only the context below.
+Cite the numbered source you used. If the context does not
+contain the answer, say that you do not know.
+
+Context:
+${context}
+
+Question: ${Q}
+Answer:`;
+
+    box.innerHTML =
+      `<span class="sys">${esc('Answer the question using only the context below.\nCite the numbered source you used. If the context does not\ncontain the answer, say that you do not know.')}</span>\n\n` +
+      `<span class="lbl">Context:</span>\n<span class="ctx">${esc(context)}</span>\n\n` +
+      `<span class="lbl">Question: </span><span class="q">${esc(Q)}</span>\n<span class="lbl">Answer:</span>`;
+
+    const chars = prompt.length;
+    const tokens = Math.round(chars / 4);
+    const answerIn = hits.findIndex(r => DOCS[r.i].id === 'kb-113');
+
+    stats.innerHTML = `
+      <div class="stat"><span class="sl">chunks pasted</span><span class="sv">${k}</span></div>
+      <div class="stat"><span class="sl">prompt size</span><span class="sv">${chars.toLocaleString()}<span class="su">chars ≈ ${tokens} tokens</span></span></div>
+      <div class="stat"><span class="sl">answer is source</span>
+        <span class="sv" style="color:var(--${answerIn === 0 ? 'good' : answerIn > 0 ? 'warn' : 'bad'})">${answerIn >= 0 ? '[' + (answerIn + 1) + ']' : 'absent'}</span></div>
+      <div class="stat"><span class="sl">context that is noise</span>
+        <span class="sv" style="color:var(--${k <= 2 ? 'good' : k <= 3 ? 'warn' : 'bad'})">${Math.round((1 - 1 / k) * 100)}<span class="su">% of chunks</span></span></div>`;
+  }
+
+  kEl.addEventListener('input', render);
+  render();
+})();
+
+
+// ════════════════════════════════════════════════════════════════════
+// Syntax highlighting — optional. The page is fully readable without it.
+// ════════════════════════════════════════════════════════════════════
+function highlight() {
+  try {
+    if (window.Prism && window.Prism.highlightAll) window.Prism.highlightAll();
+  } catch (e) { /* styling only — never break the page over it */ }
+}
+if (document.readyState === 'complete') highlight();
+else window.addEventListener('load', highlight);
+</script>
+</body>
+</html>
