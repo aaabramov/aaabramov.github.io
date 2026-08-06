@@ -1,3 +1,9 @@
+- slug: semantic-search-from-scratch
+  title: "Semantic search from scratch"
+  subtitle: "Everything between an embedding and a search system that actually works."
+  tags: [ml, search, retrieval]
+  published: 2026-08-06
+
 - slug: write-ahead-log
   title: "How databases survive a power cut"
   subtitle: "Build a write-ahead log, then crash it repeatedly until the idea sticks."
