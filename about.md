@@ -4,12 +4,12 @@ title: About
 permalink: /about/
 ---
 
-I'm Andrii — Senior Platform Engineer based in Amsterdam. I own the GCP platform at a company: Kubernetes, Terraform, secrets, networking, CI/CD, cost — everything codified and automated. Currently also driving AI/LLM adoption in infrastructure.
+I'm Andrii — a platform engineer based in Amsterdam. I work on cloud infrastructure and Kubernetes, and I like the part of the job where a hard, repeated problem becomes something every team can use without asking me.
 
-My background spans three domains. I started at a company building a Payment Service Provider from the ground up — card tokenization, dynamic routing across 50+ criteria, fraud systems, Apple/Google Pay — and grew from engineer to Tech Lead. Then a company: a cybersecurity data platform processing terabytes of streaming events per hour, where I spent a year deep in Scala, Akka Streams, and distributed cache optimization (an 80x improvement I'm still proud of). That path eventually led to platform engineering, where I found the leverage I was looking for — infrastructure that enables entire organizations rather than a single product.
+My path started in payments, went through large-scale data streaming, and ended in platform engineering. Each step taught me the same thing: the leverage is in the foundations — reliable systems, clear guardrails, good docs — not in solving one case at a time. These days that also means working out where AI and LLMs genuinely help in infrastructure, and where they don't.
 
 I believe *through teaching you learn*. The notes and interactive explainers on this site are things I built to understand something better — made public in case they're useful to anyone else.
 
-Outside of work: badminton, cycling, hiking, and the occasional billiards game.
+Outside of work: badminton, cycling, hiking, the occasional billiards game, and a small home lab of Raspberry Pis that I break on purpose.
 
 Find me on [GitHub](https://github.com/aaabramov), [LinkedIn](https://www.linkedin.com/in/andriiabramov), or [Stack Overflow](https://stackoverflow.com/users/5091346/andrii-abramov). Longer-form writing lives on [Medium](https://aaabramov.medium.com).
