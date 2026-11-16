@@ -12,4 +12,4 @@ I believe *through teaching you learn*. The notes and interactive explainers on 
 
 Outside of work: badminton, cycling, hiking, the occasional billiards game, and a small home lab of Raspberry Pis that I break on purpose.
 
-Find me on [GitHub](https://github.com/aaabramov), [LinkedIn](https://www.linkedin.com/in/andriiabramov), or [Stack Overflow](https://stackoverflow.com/users/5091346/andrii-abramov). Longer-form writing lives on [Medium](https://aaabramov.medium.com).
+Find me on [GitHub](https://github.com/aaabramov), [LinkedIn](https://www.linkedin.com/in/andrii-abramov), or [Stack Overflow](https://stackoverflow.com/users/5091346/andrii-abramov). Longer-form writing lives on [Medium](https://aaabramov.medium.com).
