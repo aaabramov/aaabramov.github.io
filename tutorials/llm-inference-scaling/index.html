@@ -1,0 +1,1774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Scaling LLM Inference — vLLM &amp; llm-d, visually</title>
+<style>
+  :root {
+    --bg: #0b0e14;
+    --bg-2: #141925;
+    --bg-3: #1c2232;
+    --fg: #e6edf3;
+    --fg-dim: #9aa4b2;
+    --fg-dimmer: #5f6a7d;
+    --accent: #7aa2f7;
+    --accent-2: #bb9af7;
+    --accent-3: #7dcfff;
+    --good: #9ece6a;
+    --warn: #e0af68;
+    --bad: #f7768e;
+    --border: #2a3142;
+    --radius: 12px;
+    --mono: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.6;
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .container { max-width: 980px; margin: 0 auto; padding: 0 24px; }
+
+  header {
+    padding: 80px 0 60px;
+    background: radial-gradient(ellipse at top, rgba(122,162,247,0.12), transparent 60%);
+    border-bottom: 1px solid var(--border);
+  }
+  h1 {
+    font-size: clamp(32px, 5vw, 52px);
+    line-height: 1.15;
+    margin: 0 0 16px;
+    letter-spacing: -0.02em;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 50%, var(--accent-3) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 700;
+  }
+  .tagline {
+    font-size: clamp(17px, 2vw, 20px);
+    color: var(--fg-dim);
+    max-width: 680px;
+    margin: 0 0 28px;
+  }
+  .hero-meta {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: var(--fg-dimmer);
+    font-family: var(--mono);
+  }
+  .hero-meta span::before { content: "◆ "; color: var(--accent); }
+
+  section { padding: 64px 0; border-bottom: 1px solid var(--border); }
+  section:last-of-type { border-bottom: none; }
+  section h2 { font-size: clamp(24px, 3.5vw, 32px); margin: 0 0 8px; letter-spacing: -0.01em; }
+  section h3 { font-size: 18px; margin: 28px 0 10px; }
+  section .eyebrow {
+    font-family: var(--mono);
+    color: var(--accent);
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  section .lede { color: var(--fg-dim); max-width: 740px; margin: 0 0 32px; font-size: 17px; }
+  p { margin: 0 0 16px; }
+  p code, li code, td code {
+    font-family: var(--mono);
+    background: var(--bg-3);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.88em;
+    color: var(--accent-3);
+  }
+
+  .callout {
+    padding: 16px 20px;
+    background: var(--bg-2);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    margin: 20px 0;
+    color: var(--fg-dim);
+  }
+  .callout strong { color: var(--fg); }
+  .callout.w { border-left-color: var(--warn); }
+
+  .card {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-top: 20px;
+  }
+  .card h3:first-child { margin-top: 0; }
+
+  button {
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    padding: 9px 18px;
+    border-radius: 8px;
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: transform 0.1s, background 0.15s;
+  }
+  button:hover:not(:disabled) { background: var(--accent-2); transform: translateY(-1px); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.ghost {
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid var(--border);
+  }
+  button.ghost:hover:not(:disabled) { background: var(--bg-3); color: var(--accent); }
+  button.ghost.on { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+
+  select, input[type=range] { accent-color: var(--accent); }
+  select {
+    background: var(--bg-3);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 14px;
+    font-family: var(--sans);
+  }
+  .controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+  .ctl-label { font-family: var(--mono); font-size: 12px; color: var(--fg-dim); text-transform: uppercase; letter-spacing: 0.06em; }
+
+  .formula {
+    font-family: var(--mono);
+    background: var(--bg-3);
+    padding: 14px 18px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    margin: 14px 0;
+    font-size: 14px;
+    color: var(--accent-3);
+    overflow-x: auto;
+  }
+  pre.code {
+    font-family: var(--mono);
+    background: var(--bg-3);
+    padding: 14px 18px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    margin: 14px 0;
+    font-size: 13px;
+    color: var(--fg-dim);
+    overflow-x: auto;
+    line-height: 1.7;
+  }
+  pre.code .hl { color: var(--accent-3); }
+
+  table.spec {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    margin: 16px 0;
+  }
+  table.spec th, table.spec td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  table.spec th {
+    font-family: var(--mono);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--fg-dim);
+  }
+  table.spec td { color: var(--fg-dim); }
+  table.spec td:first-child { color: var(--fg); white-space: nowrap; }
+  .table-scroll { overflow-x: auto; }
+
+  .stat-row { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 16px; }
+  .stat {
+    background: var(--bg-3);
+    border-radius: 8px;
+    padding: 10px 16px;
+    min-width: 120px;
+    flex: 1;
+  }
+  .stat .k { font-family: var(--mono); font-size: 11px; color: var(--fg-dimmer); text-transform: uppercase; letter-spacing: 0.06em; }
+  .stat .v { font-family: var(--mono); font-size: 20px; font-weight: 600; color: var(--fg); margin-top: 2px; }
+  .stat .v small { font-size: 12px; color: var(--fg-dimmer); font-weight: 400; }
+
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 14px; font-size: 13px; font-family: var(--mono); color: var(--fg-dim); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+
+  /* ── 01 generation anatomy ── */
+  .token-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; min-height: 34px; }
+  .tok {
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 5px 8px;
+    border-radius: 6px;
+    background: var(--bg-3);
+    color: var(--fg-dimmer);
+    border: 1px solid var(--border);
+    transition: background 0.2s, color 0.2s, border-color 0.2s;
+  }
+  .tok.pf { background: rgba(224,175,104,0.18); border-color: var(--warn); color: var(--warn); }
+  .tok.pfdone { background: rgba(224,175,104,0.10); border-color: rgba(224,175,104,0.4); color: var(--fg-dim); }
+  .tok.dec { background: rgba(122,162,247,0.16); border-color: var(--accent); color: var(--accent); }
+  .tok.hidden { opacity: 0; }
+  .phase-label { font-family: var(--mono); font-size: 12px; color: var(--fg-dimmer); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 14px; }
+  .timeline {
+    display: flex;
+    height: 18px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--bg-3);
+    margin-top: 8px;
+    border: 1px solid var(--border);
+  }
+  .timeline .seg-pf { background: var(--warn); width: 0%; transition: width 0.3s; }
+  .timeline .seg-dec { background: var(--accent); width: 0%; transition: width 0.2s; }
+  .tl-caption { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 11px; color: var(--fg-dimmer); margin-top: 4px; }
+
+  /* ── 02 KV calculator ── */
+  .calc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 24px; margin-bottom: 18px; }
+  @media (max-width: 720px) { .calc-grid { grid-template-columns: 1fr; } }
+  .calc-grid label { display: block; }
+  .calc-grid .ctl-label { display: block; margin-bottom: 6px; }
+  .calc-grid input[type=range] { width: 100%; }
+  .calc-grid select { width: 100%; }
+  .range-val { font-family: var(--mono); font-size: 13px; color: var(--accent-3); }
+  .mem-bar-wrap { position: relative; margin-top: 10px; }
+  .mem-bar {
+    display: flex;
+    height: 34px;
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+  }
+  .mem-bar .seg { height: 100%; transition: width 0.25s; min-width: 0; }
+  .mem-bar .seg.weights { background: var(--accent); }
+  .mem-bar .seg.kv { background: var(--warn); }
+  .mem-bar .seg.over { background: var(--bad); }
+  .cap-line {
+    position: absolute; top: -6px; bottom: -6px; width: 2px;
+    background: var(--fg); opacity: 0.8;
+  }
+  .cap-line::after {
+    content: attr(data-label);
+    position: absolute; top: -18px; left: 50%; transform: translateX(-50%);
+    font-family: var(--mono); font-size: 10px; color: var(--fg-dim); white-space: nowrap;
+  }
+  #kv-verdict { margin-top: 26px; font-size: 14px; }
+  #kv-verdict .ok { color: var(--good); }
+  #kv-verdict .no { color: var(--bad); }
+
+  /* ── 03 batching ── */
+  .batch-race { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 720px) { .batch-race { grid-template-columns: 1fr; } }
+  .batch-panel {
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+  }
+  .batch-panel h4 { margin: 0 0 10px; font-size: 13px; font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-dim); }
+  .slot { display: grid; grid-template-columns: 44px 1fr; gap: 8px; align-items: center; margin-bottom: 6px; }
+  .slot .sid { font-family: var(--mono); font-size: 11px; color: var(--fg-dimmer); }
+  .slot .bar { height: 14px; background: var(--bg); border-radius: 4px; overflow: hidden; display: flex; border: 1px solid var(--border); }
+  .slot .bar .pf { background: var(--warn); height: 100%; }
+  .slot .bar .dec { background: var(--accent); height: 100%; }
+  .slot.idle .bar { opacity: 0.35; }
+  .batch-stats { font-family: var(--mono); font-size: 12px; color: var(--fg-dim); margin-top: 10px; line-height: 1.8; }
+  .batch-stats b { color: var(--fg); }
+
+  .paged-grids { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 20px; }
+  @media (max-width: 720px) { .paged-grids { grid-template-columns: 1fr; } }
+  .blk-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; margin-top: 10px; }
+  .blk {
+    aspect-ratio: 1;
+    border-radius: 4px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    position: relative;
+  }
+  .blk.waste {
+    background: repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(247,118,142,0.25) 3px, rgba(247,118,142,0.25) 6px);
+    border-color: rgba(247,118,142,0.4);
+  }
+  .grid-title { font-family: var(--mono); font-size: 12px; color: var(--fg-dim); text-transform: uppercase; letter-spacing: 0.06em; }
+
+  /* ── 04 prefix cache ── */
+  .pfx-grid { display: flex; flex-wrap: wrap; gap: 4px; margin: 12px 0; min-height: 22px; }
+  .pfx-blk { width: 16px; height: 16px; border-radius: 3px; background: var(--bg-3); border: 1px solid var(--border); }
+  .pfx-blk.cached { background: rgba(158,206,106,0.35); border-color: var(--good); }
+  .pfx-blk.new { background: rgba(224,175,104,0.3); border-color: var(--warn); }
+  .pfx-log { font-family: var(--mono); font-size: 12px; color: var(--fg-dim); margin-top: 8px; min-height: 20px; }
+
+  /* ── 05 parallelism ── */
+  #par-svg { width: 100%; height: auto; display: block; background: var(--bg-3); border-radius: 8px; border: 1px solid var(--border); }
+  #par-caption { margin-top: 14px; color: var(--fg-dim); font-size: 14px; min-height: 70px; }
+  #par-caption code { white-space: nowrap; }
+
+  /* ── 06 LB sim ── */
+  .replica-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 16px; }
+  @media (max-width: 720px) { .replica-row { grid-template-columns: repeat(2, 1fr); } }
+  .replica {
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--fg-dim);
+  }
+  .replica h5 { margin: 0 0 8px; font-size: 12px; color: var(--fg); }
+  .replica .qbar { display: flex; gap: 3px; min-height: 12px; margin: 6px 0; flex-wrap: wrap; }
+  .replica .qreq { width: 10px; height: 12px; border-radius: 2px; background: var(--fg-dimmer); }
+  .replica .qreq.active { background: var(--warn); }
+  .replica .cache-bar { height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; margin: 4px 0 8px; border: 1px solid var(--border); }
+  .replica .cache-bar .fill { height: 100%; background: var(--good); transition: width 0.2s; }
+  .replica .line { display: flex; justify-content: space-between; padding: 1px 0; }
+  .replica .line b { color: var(--fg); font-weight: 600; }
+  #lb-results td .mini-bar { height: 8px; background: var(--accent); border-radius: 3px; margin-top: 4px; }
+  #lb-results .best { color: var(--good); font-weight: 600; }
+  #lb-live-stats { font-family: var(--mono); font-size: 13px; color: var(--fg-dim); margin-top: 12px; }
+  #lb-live-stats b { color: var(--fg); }
+
+  /* ── 07 scorer playground ── */
+  .w-sliders { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px; }
+  @media (max-width: 720px) { .w-sliders { grid-template-columns: 1fr; } }
+  .w-sliders label { font-family: var(--mono); font-size: 12px; color: var(--fg-dim); }
+  .w-sliders input { width: 100%; }
+  table.scorer { width: 100%; border-collapse: collapse; font-size: 13px; font-family: var(--mono); }
+  table.scorer th, table.scorer td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; }
+  table.scorer th { font-size: 11px; text-transform: uppercase; color: var(--fg-dim); letter-spacing: 0.05em; }
+  table.scorer tr.winner td { background: rgba(158,206,106,0.07); }
+  table.scorer tr.winner td:first-child { color: var(--good); }
+  table.scorer .sbar { height: 6px; background: var(--accent); border-radius: 3px; margin-top: 3px; }
+  table.scorer .total { font-weight: 700; color: var(--fg); }
+
+  #arch-svg, #pd-svg { width: 100%; height: auto; display: block; background: var(--bg-3); border-radius: 8px; border: 1px solid var(--border); }
+  .svg-note { font-family: var(--mono); font-size: 12px; color: var(--fg-dimmer); margin-top: 8px; }
+
+  /* ── 08 pd steps ── */
+  #pd-text { margin-top: 14px; color: var(--fg-dim); font-size: 14px; min-height: 64px; }
+  #pd-text b { color: var(--fg); }
+  .pd-fade { opacity: 0.12; transition: opacity 0.35s; }
+  .pd-show { opacity: 1; }
+
+  /* ── 09 ladder ── */
+  .ladder { counter-reset: step; list-style: none; padding: 0; margin: 20px 0 0; }
+  .ladder li {
+    counter-increment: step;
+    position: relative;
+    padding: 14px 16px 14px 56px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 10px;
+    color: var(--fg-dim);
+    font-size: 15px;
+  }
+  .ladder li::before {
+    content: counter(step);
+    position: absolute; left: 16px; top: 14px;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: var(--bg-3);
+    color: var(--accent);
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border);
+  }
+  .ladder li strong { color: var(--fg); }
+
+  footer { padding: 40px 0 60px; color: var(--fg-dimmer); font-size: 13px; }
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+  section a { color: var(--accent); text-decoration: none; }
+  section a:hover { text-decoration: underline; }
+
+  .kb-back { border-bottom: 1px solid var(--border); padding: 14px 24px; font-family: var(--mono); font-size: 13px; }
+  .kb-back a { color: var(--fg-dimmer); text-decoration: none; transition: color 0.15s; }
+  .kb-back a:hover { color: var(--accent); }
+  .kb-back .arr { color: var(--accent); margin-right: 6px; }
+</style>
+</head>
+<body>
+
+<nav class="kb-back"><a href="/"><span class="arr">←</span>aaabramov / knowledge base</a></nav>
+
+<!-- ═══ HERO ═══ -->
+<header>
+  <div class="container">
+    <h1>Scaling LLM<br/>inference.</h1>
+    <p class="tagline">
+      From one GPU to a fleet: how vLLM serves a model, how a model splits across GPUs,
+      and why round-robin is the wrong load balancer — ending at <strong>llm-d</strong>.
+    </p>
+    <div class="hero-meta">
+      <span>all simulators run in your browser</span>
+      <span>vLLM + llm-d v1.0 (late 2026)</span>
+      <span>no server, no dependencies</span>
+    </div>
+  </div>
+</header>
+
+<!-- ═══ 01 ANATOMY ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">01 · Anatomy of a request</div>
+    <h2>One request, two very different phases.</h2>
+    <p class="lede">
+      An LLM answers in two phases. <strong style="color:var(--warn)">Prefill</strong> reads the whole prompt in
+      one parallel pass and fills the KV cache. <strong style="color:var(--accent)">Decode</strong> then generates
+      the answer one token at a time, because each token depends on the previous one.
+      The two phases stress the GPU in opposite ways.
+    </p>
+
+    <div class="card">
+      <div class="controls">
+        <button class="ghost on" id="gen-short">Short prompt (180 tok)</button>
+        <button class="ghost" id="gen-long">Long RAG prompt (4,200 tok)</button>
+        <button id="gen-replay">▶ Replay</button>
+      </div>
+
+      <div class="phase-label">Prompt → <span style="color:var(--warn)">prefill</span> (one pass, all tokens in parallel)</div>
+      <div class="token-row" id="gen-prompt"></div>
+
+      <div class="phase-label">Output → <span style="color:var(--accent)">decode</span> (one token per step)</div>
+      <div class="token-row" id="gen-output"></div>
+
+      <div class="phase-label">Time</div>
+      <div class="timeline">
+        <div class="seg-pf" id="gen-tl-pf"></div>
+        <div class="seg-dec" id="gen-tl-dec"></div>
+      </div>
+      <div class="tl-caption"><span>request arrives</span><span id="gen-tl-ttft">TTFT</span><span>last token</span></div>
+
+      <div class="stat-row">
+        <div class="stat"><div class="k">Time to first token (TTFT)</div><div class="v" id="gen-ttft">—</div></div>
+        <div class="stat"><div class="k">Inter-token latency (ITL)</div><div class="v" id="gen-itl">—</div></div>
+        <div class="stat"><div class="k">Total latency</div><div class="v" id="gen-total">—</div></div>
+      </div>
+      <p style="color:var(--fg-dimmer);font-size:12px;font-family:var(--mono);margin:12px 0 0">
+        Illustrative rates: prefill ≈ 12,000 tok/s, decode ≈ 55 tok/s for one stream on one modern GPU.
+      </p>
+    </div>
+
+    <div class="callout">
+      <strong>Why the split matters.</strong> Prefill is <em>compute-bound</em>: thousands of tokens
+      multiply through the weights at once. Decode is <em>memory-bandwidth-bound</em>: for every single
+      token, the GPU must stream all the weights and the KV cache from memory. One phase saturates
+      FLOPs, the other saturates HBM. Keep this asymmetry in mind — the whole tutorial builds on it.
+    </div>
+
+    <p>
+      Requests are also wildly <strong>heterogeneous</strong>. A RAG query reads 20,000 tokens and writes 100.
+      A reasoning agent reads 500 and writes 4,000. A "fix this typo" completion does neither.
+      Classic web load balancing assumes short, uniform requests — LLM traffic breaks that assumption,
+      which is where this tutorial ends up. First: where does all the memory go?
+    </p>
+  </div>
+</section>
+
+<!-- ═══ 02 KV CACHE ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">02 · The KV cache</div>
+    <h2>The thing that actually eats your GPU.</h2>
+    <p class="lede">
+      Attention lets each new token look at every previous token. To avoid recomputing the past on
+      every step, the engine caches each token's attention <em>keys</em> and <em>values</em> — the
+      <strong>KV cache</strong>. It grows linearly with context length <em>and</em> with the number of
+      concurrent requests, and it must live in GPU memory next to the weights.
+    </p>
+
+    <div class="formula">KV bytes per token = 2 (K and V) × layers × kv_heads × head_dim × bytes_per_value</div>
+
+    <div class="card">
+      <div class="calc-grid">
+        <label><span class="ctl-label">Model</span>
+          <select id="kv-model">
+            <option value="8b">Llama 3.1 8B (32 layers · 8 KV heads)</option>
+            <option value="32b">Qwen2.5 32B (64 layers · 8 KV heads)</option>
+            <option value="70b" selected>Llama 3.1 70B (80 layers · 8 KV heads)</option>
+          </select>
+        </label>
+        <label><span class="ctl-label">Weights precision</span>
+          <select id="kv-prec">
+            <option value="2">FP16 / BF16 (2 bytes per param)</option>
+            <option value="1">FP8 (1 byte per param)</option>
+          </select>
+        </label>
+        <label><span class="ctl-label">GPU</span>
+          <select id="kv-gpu">
+            <option value="24">RTX 4090 — 24 GB</option>
+            <option value="48">L40S — 48 GB</option>
+            <option value="80" selected>H100 / A100 — 80 GB</option>
+            <option value="141">H200 — 141 GB</option>
+          </select>
+        </label>
+        <div></div>
+        <label><span class="ctl-label">Context length per request: <span class="range-val" id="kv-ctx-val">8,192</span> tokens</span>
+          <input type="range" id="kv-ctx" min="9" max="17" step="0.25" value="13" />
+        </label>
+        <label><span class="ctl-label">Concurrent requests: <span class="range-val" id="kv-seq-val">16</span></span>
+          <input type="range" id="kv-seq" min="1" max="64" step="1" value="16" />
+        </label>
+      </div>
+
+      <div class="mem-bar-wrap">
+        <div class="mem-bar" id="kv-bar"></div>
+        <div class="cap-line" id="kv-cap" data-label="GPU capacity"></div>
+      </div>
+      <div class="legend">
+        <span><span class="sw" style="background:var(--accent)"></span>model weights</span>
+        <span><span class="sw" style="background:var(--warn)"></span>KV cache</span>
+        <span><span class="sw" style="background:var(--bad)"></span>over capacity</span>
+      </div>
+
+      <div class="stat-row">
+        <div class="stat"><div class="k">KV cache per token</div><div class="v" id="kv-pertok">—</div></div>
+        <div class="stat"><div class="k">Total KV cache</div><div class="v" id="kv-total">—</div></div>
+        <div class="stat"><div class="k">Weights</div><div class="v" id="kv-weights">—</div></div>
+      </div>
+      <div id="kv-verdict"></div>
+    </div>
+
+    <div class="callout">
+      <strong>Two takeaways.</strong> First: batch size — and therefore throughput — is capped by KV-cache
+      memory, not by compute. Second: a 70B model at FP16 does not fit on <em>any</em> single GPU, so
+      multi-GPU serving is not an optimization — it is the entry ticket. Both problems come up next.
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 03 vLLM ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">03 · vLLM</div>
+    <h2>Continuous batching and PagedAttention.</h2>
+    <p class="lede">
+      <a href="https://docs.vllm.ai" target="_blank" rel="noopener">vLLM</a> is the de-facto open-source
+      serving engine, and it rests on two ideas. <strong>Continuous batching</strong> admits and retires
+      requests at every decode step instead of waiting for a whole batch to finish.
+      <strong>PagedAttention</strong> stores the KV cache in small fixed-size blocks, like virtual
+      memory pages, instead of one contiguous slab per request.
+    </p>
+
+    <div class="card">
+      <h3>Static vs continuous batching — same arrivals, same GPU</h3>
+      <p style="color:var(--fg-dim);font-size:14px">
+        Six batch slots. Each request prefills (<span style="color:var(--warn)">amber</span>), then decodes
+        (<span style="color:var(--accent)">blue</span>) a random number of tokens. The static batcher must
+        wait for the slowest request before it admits the next batch. Watch the idle slots.
+      </p>
+      <div class="controls">
+        <button id="batch-toggle">▶ Start</button>
+        <button class="ghost" id="batch-reset">Reset</button>
+      </div>
+      <div class="batch-race">
+        <div class="batch-panel">
+          <h4>Static batching</h4>
+          <div id="batch-static"></div>
+          <div class="batch-stats" id="batch-static-stats"></div>
+        </div>
+        <div class="batch-panel">
+          <h4>Continuous batching</h4>
+          <div id="batch-cont"></div>
+          <div class="batch-stats" id="batch-cont-stats"></div>
+        </div>
+      </div>
+    </div>
+
+    <h3>PagedAttention: KV cache without fragmentation</h3>
+    <p>
+      Early engines reserved one contiguous memory region per request, sized for the <em>maximum</em>
+      possible context. Most of that reservation sat empty. vLLM instead slices the cache into blocks
+      (16 tokens each in vLLM's default configuration) and keeps a per-request block table — so blocks
+      land anywhere, nothing is reserved up front, and two requests can even point at the
+      <em>same</em> block when they share a prefix.
+    </p>
+
+    <div class="card">
+      <div class="paged-grids">
+        <div>
+          <div class="grid-title">Contiguous preallocation</div>
+          <div class="blk-grid" id="grid-contig"></div>
+        </div>
+        <div>
+          <div class="grid-title">PagedAttention blocks</div>
+          <div class="blk-grid" id="grid-paged"></div>
+        </div>
+      </div>
+      <div class="legend" id="paged-legend"></div>
+    </div>
+
+    <div class="callout">
+      <strong>Result:</strong> near-zero waste means more concurrent sequences fit in the same memory,
+      which directly raises throughput — remember, batch size is memory-capped. The paper is
+      <a href="https://arxiv.org/abs/2309.06180" target="_blank" rel="noopener">"Efficient Memory Management
+      for Large Language Model Serving with PagedAttention"</a> (SOSP 2023).
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 04 PREFIX CACHING ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">04 · Prefix caching</div>
+    <h2>Most prompts repeat. Stop recomputing them.</h2>
+    <p class="lede">
+      Blocks are content-addressed: hash the tokens, and identical prefixes map to identical blocks.
+      vLLM's <strong>automatic prefix caching</strong> exploits this. A chat sends the whole conversation
+      back on every turn; an agent re-sends its system prompt and tool definitions hundreds of times.
+      If the blocks are still resident, prefill skips them entirely — and TTFT collapses.
+    </p>
+
+    <div class="card">
+      <h3>A growing conversation, block by block</h3>
+      <p style="color:var(--fg-dim);font-size:14px">
+        Each cell is one 16-token KV block of the <em>current</em> prompt.
+        <span style="color:var(--good)">Green</span> blocks are already cached on this replica;
+        <span style="color:var(--warn)">amber</span> blocks must be prefilled.
+      </p>
+      <div class="controls">
+        <button id="pfx-send">Send next turn</button>
+        <button class="ghost" id="pfx-evict">Route to a different replica</button>
+        <button class="ghost" id="pfx-reset">Reset</button>
+      </div>
+      <div class="pfx-grid" id="pfx-grid"></div>
+      <div class="pfx-log" id="pfx-log">Press "Send next turn" to start the conversation.</div>
+      <div class="stat-row">
+        <div class="stat"><div class="k">Prompt tokens</div><div class="v" id="pfx-prompt">0</div></div>
+        <div class="stat"><div class="k">Cache hit rate</div><div class="v" id="pfx-hit">—</div></div>
+        <div class="stat"><div class="k">TTFT cold / warm</div><div class="v" id="pfx-ttft">—</div></div>
+      </div>
+    </div>
+
+    <div class="callout w">
+      <strong>The catch that sets up everything below:</strong> the cache lives on <em>one replica's</em> GPU.
+      Press "Route to a different replica" above — every block turns amber again. A fleet of replicas
+      behind a dumb load balancer throws this cache away on almost every turn. Hold that thought for section 06.
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 05 PARALLELISM ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">05 · Across GPUs</div>
+    <h2>Four ways to split a model.</h2>
+    <p class="lede">
+      When one GPU is not enough, you must choose <em>what</em> to split: each weight matrix (tensor
+      parallelism), the layer stack (pipeline parallelism), the request stream (data parallelism), or —
+      for mixture-of-experts models — the experts themselves (expert parallelism). Each choice buys a
+      different thing and pays a different communication bill.
+    </p>
+
+    <div class="card">
+      <div class="controls">
+        <button class="ghost on" data-par="tp">TP</button>
+        <button class="ghost" data-par="pp">TP × PP</button>
+        <button class="ghost" data-par="dp">DP</button>
+        <button class="ghost" data-par="ep">EP (MoE)</button>
+      </div>
+      <svg id="par-svg" viewBox="0 0 760 330" role="img" aria-label="Parallelism layout diagram"></svg>
+      <div id="par-caption"></div>
+    </div>
+
+    <div class="table-scroll">
+    <table class="spec">
+      <thead><tr><th>Strategy</th><th>What is split</th><th>vLLM flag</th><th>Use when</th><th>Communication cost</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Tensor (TP)</td>
+          <td>Every weight matrix, column/row-wise (Megatron-style)</td>
+          <td><code>--tensor-parallel-size</code></td>
+          <td>Model too large for one GPU but fits on one node</td>
+          <td>All-reduce every layer — needs NVLink-class bandwidth</td>
+        </tr>
+        <tr>
+          <td>Pipeline (PP)</td>
+          <td>The layer stack, into sequential stages (uneven splits allowed)</td>
+          <td><code>--pipeline-parallel-size</code></td>
+          <td>Across nodes, or GPUs without NVLink (e.g. L40S)</td>
+          <td>Activations once per stage boundary — cheap, but adds latency</td>
+        </tr>
+        <tr>
+          <td>Data (DP)</td>
+          <td>Nothing — full replicas, independent KV caches</td>
+          <td><code>--data-parallel-size</code></td>
+          <td>Model fits; you need throughput</td>
+          <td>None between replicas — but now you need a smart router</td>
+        </tr>
+        <tr>
+          <td>Expert (EP)</td>
+          <td>MoE expert layers, spread across GPUs</td>
+          <td><code>--enable-expert-parallel</code></td>
+          <td>Sparse MoE models (DeepSeek-class), usually DP attention + EP experts</td>
+          <td>All-to-all token dispatch at every MoE layer</td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+
+    <p>The vLLM docs' rule of thumb is short enough to memorize:</p>
+    <pre class="code"># fits on one GPU?            → no distribution needed
+# fits on one node?           → TP = number of GPUs on the node
+vllm serve meta-llama/Llama-3.1-70B-Instruct <span class="hl">--tensor-parallel-size 4</span>
+
+# needs multiple nodes?       → TP = GPUs per node, PP = number of nodes
+vllm serve big-model <span class="hl">--tensor-parallel-size 8 --pipeline-parallel-size 2</span>  # 16 GPUs
+
+# MoE throughput at scale     → DP for attention + EP for experts
+vllm serve deepseek-model <span class="hl">--data-parallel-size 4 --enable-expert-parallel</span></pre>
+
+    <div class="callout">
+      <strong>Multi-node footnote.</strong> vLLM uses Ray by default for multi-node serving
+      (<code>--distributed-executor-backend ray</code>) and Python multiprocessing within a node.
+      Cross-node TP is only viable on RDMA-class networks — if NCCL logs say
+      <code>[send] via NET/Socket</code>, your interconnect is the bottleneck, and PP across nodes
+      is the better trade.
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 06 LOAD BALANCING ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">06 · The load balancing problem</div>
+    <h2>Round-robin meets a prefix cache. It loses.</h2>
+    <p class="lede">
+      Scale-out means data parallelism: N replicas behind a router. Kubernetes gives you round-robin
+      for free, and for stateless microservices it is fine. LLM replicas are not stateless: each one
+      carries queues of wildly different cost <em>and</em> a KV cache full of someone's conversation.
+      A router that ignores both recomputes prefixes constantly and parks cheap requests behind
+      25,000-token monsters.
+    </p>
+
+    <div class="card">
+      <h3>Simulator: one workload, three routing policies</h3>
+      <p style="color:var(--fg-dim);font-size:14px">
+        4 replicas. 20 multi-turn agent sessions (growing 4k–12k-token prefixes) plus 3 one-off 12k–20k
+        token RAG requests. Each replica prefills one request at a time and keeps an LRU prefix cache
+        (100k tokens). The prefix-aware policy scores
+        <code>2.0 × prefix-match + 1.0 × (1 − load)</code> — the same weighted-sum shape llm-d uses.
+      </p>
+      <div class="controls">
+        <span class="ctl-label">Live view:</span>
+        <select id="lb-strategy">
+          <option value="rr">Round-robin</option>
+          <option value="least">Least-loaded (queue-aware)</option>
+          <option value="prefix" selected>Prefix-cache-aware + load</option>
+        </select>
+        <button id="lb-toggle">▶ Start</button>
+        <button class="ghost" id="lb-reset">Reset</button>
+      </div>
+      <div class="replica-row" id="lb-replicas"></div>
+      <div id="lb-live-stats"></div>
+
+      <h3 style="margin-top:28px">Full comparison (same workload, instant run)</h3>
+      <div class="controls"><button id="lb-compare">Run all three policies</button></div>
+      <div class="table-scroll">
+      <table class="spec" id="lb-results" style="display:none">
+        <thead><tr><th>Policy</th><th>Mean TTFT</th><th>P95 TTFT</th><th>Prefix cache hit rate</th><th>Worst queue</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      </div>
+      <p id="lb-note" style="display:none;color:var(--fg-dimmer);font-size:13px;font-family:var(--mono)">
+        Simulated time: 1 tick = 20 ms. Deterministic seed — rerun gives identical numbers.
+        Note the trap: least-loaded can lose even to round-robin, because it counts <em>requests</em>,
+        not tokens — a replica mid-way through a 20k-token prefill looks idle and attracts work.
+        Load signals must be token-aware (llm-d ships a token-load-scorer for exactly this).
+      </p>
+    </div>
+
+    <div class="callout">
+      <strong>This is not a toy effect.</strong> In the llm-d community's May 2025 benchmark
+      (LLaMA 4 Scout FP8, two 8×H100 nodes, long-input multi-turn QA), prefix-aware routing delivered a
+      mean TTFT about <strong>3× lower</strong> than the baseline load balancer at 4 QPS, and sustained
+      <strong>~50% to 2×</strong> more QPS within a P95 TTFT SLO. Google reports that its Gemini-serving
+      platform doubled its prefix-cache hit rate from 35% to 70% with the same routing family
+      (vendor-reported, October 2026). Sources in the footer.
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 07 LLM-D ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">07 · llm-d</div>
+    <h2>Kubernetes-native brains for the router.</h2>
+    <p class="lede">
+      <a href="https://llm-d.ai" target="_blank" rel="noopener">llm-d</a> is a CNCF Sandbox project
+      (announced May 2025 by Red Hat, Google, IBM and others; v1.0 shipped October 2026) that packages
+      exactly this routing intelligence for Kubernetes. It does not replace vLLM — it orchestrates a
+      fleet of vLLM (or SGLang, or TensorRT-LLM) pods and decides, per request, which pod wins.
+    </p>
+
+    <svg id="arch-svg" viewBox="0 0 760 360" role="img" aria-label="llm-d architecture: client to gateway proxy to endpoint picker to vLLM pods"></svg>
+    <div class="svg-note">The llm-d Router = any Gateway-API proxy (Istio, Envoy AI Gateway, GKE Gateway…) + the Endpoint Picker, attached via an <code>InferencePool</code> CRD and Envoy's <code>ext-proc</code> protocol (Gateway API Inference Extension).</div>
+
+    <h3>The scheduler: Filter → Score → Pick</h3>
+    <p>
+      For each request, the Endpoint Picker (EPP) filters candidate pods (by role, label, SLO tier),
+      lets every enabled <strong>scorer</strong> grade each pod from 0.0 to 1.0, multiplies each score by
+      its configured weight, sums, and the <code>max-score-picker</code> takes the winner. The scorers
+      shipped in v1.0 include:
+    </p>
+    <div class="table-scroll">
+    <table class="spec">
+      <thead><tr><th>Scorer</th><th>Prefers pods with…</th></tr></thead>
+      <tbody>
+        <tr><td><code>prefix-cache-scorer</code></td><td>the longest matching cached prefix for this prompt</td></tr>
+        <tr><td><code>queue-scorer</code></td><td>the shortest request queue</td></tr>
+        <tr><td><code>kv-cache-utilization-scorer</code></td><td>the most free KV-cache memory</td></tr>
+        <tr><td><code>session-affinity-scorer</code></td><td>the pod that already served this session</td></tr>
+        <tr><td><code>latency-scorer</code></td><td>predicted TTFT/TPOT headroom against the request's SLO</td></tr>
+        <tr><td><code>lora-affinity-scorer</code></td><td>the requested LoRA adapter already loaded</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <div class="card">
+      <h3>Scorer playground</h3>
+      <p style="color:var(--fg-dim);font-size:14px">
+        Four pods, one incoming request (16 prompt blocks). Move the weights and watch the decision flip.
+        Weights here are illustrative — llm-d enables a curated subset of plugins by default and you
+        tune weights per deployment.
+      </p>
+      <div class="w-sliders">
+        <label>prefix-cache-scorer weight: <b id="w-pfx-val">2.0</b><input type="range" id="w-pfx" min="0" max="3" step="0.1" value="2" /></label>
+        <label>queue-scorer weight: <b id="w-q-val">1.0</b><input type="range" id="w-q" min="0" max="3" step="0.1" value="1" /></label>
+        <label>kv-cache-utilization weight: <b id="w-kv-val">1.0</b><input type="range" id="w-kv" min="0" max="3" step="0.1" value="1" /></label>
+      </div>
+      <div class="controls"><button class="ghost" id="scorer-rand">⟳ New request / pod states</button></div>
+      <div class="table-scroll">
+      <table class="scorer" id="scorer-table">
+        <thead><tr><th>Pod</th><th>Prefix match</th><th>Queue</th><th>KV util</th><th>prefix score</th><th>queue score</th><th>kv score</th><th>Σ weighted</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      </div>
+    </div>
+
+    <h3>How does the router know what each pod has cached?</h3>
+    <p>Two modes, one trade-off:</p>
+    <ul style="color:var(--fg-dim);line-height:1.9">
+      <li><strong>Precise</strong> — vLLM pods publish <code>BlockStored</code> / <code>BlockRemoved</code> /
+        <code>AllBlocksCleared</code> KV-events over ZMQ; the EPP's KV-cache indexer keeps a live
+        block-key → pods map. Exact, at the cost of an event pipeline.</li>
+      <li><strong>Approximate</strong> (the default) — no events at all. The EPP hashes the prompt into
+        64-token blocks and remembers, in a local LRU, which pod it recently sent each prefix to —
+        assuming that pod still holds it. Cheap, but it can drift from reality after cache eviction.</li>
+    </ul>
+
+    <div class="callout">
+      <strong>Adoption path (from the 1.0 announcement):</strong> start by putting prefix-aware routing in
+      front of the vLLM deployment you already have. Add flow control, KV-cache offloading (host RAM →
+      SSD), and disaggregation only when the workload asks for them. Which brings us to the flagship feature…
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 08 P/D DISAGGREGATION ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">08 · Prefill/decode disaggregation</div>
+    <h2>Split the two phases onto different pods.</h2>
+    <p class="lede">
+      Section 01 showed that prefill is compute-bound and decode is memory-bound. On a shared replica
+      they fight: one long prefill stalls every decoding stream on the pod (the ITL spikes you see in
+      production). Disaggregation runs <strong style="color:var(--warn)">prefill pods</strong> and
+      <strong style="color:var(--accent)">decode pods</strong> as separate pools, sized and parallelized
+      independently, and ships the KV cache between them.
+    </p>
+
+    <div class="card">
+      <h3>One request through a disaggregated stack</h3>
+      <div class="controls">
+        <button class="ghost" id="pd-prev">← Prev</button>
+        <button id="pd-next">Next →</button>
+        <span class="ctl-label" id="pd-step-label">step 1 / 6</span>
+      </div>
+      <svg id="pd-svg" viewBox="0 0 760 330" role="img" aria-label="Prefill/decode disaggregation request flow"></svg>
+      <div id="pd-text"></div>
+    </div>
+
+    <p>
+      The llm-d mechanics, exactly as implemented: decode pods carry the label
+      <code>llm-d.ai/role=decode</code> and a routing-proxy sidecar. The EPP first picks a decode pod,
+      then a <em>decider</em> checks whether the uncached part of the prompt is big enough to justify
+      remote prefill. If yes, it picks a prefill pod and injects the header
+      <code>x-llm-d-prefiller-host-port</code>. The sidecar calls the prefill pod with
+      <code>max_tokens=1</code> plus <code>kv_transfer_params</code>, and the KV blocks move over
+      <strong>NIXL</strong> (NVIDIA Inference Transfer Library) — RDMA with GPUDirect, GPU-to-GPU,
+      bypassing the CPU. If the prefiller errors out, the sidecar falls back to local prefill.
+    </p>
+
+    <div class="callout w">
+      <strong>When it pays — and when it does not.</strong> The llm-d docs are blunt: P/D "is not a target
+      for all workloads". It pays for medium-large models (their example: gpt-oss-120b), long inputs with
+      short outputs (10k in / 1k out — not 200/200), and wide-EP MoE serving. It needs RDMA-class
+      interconnects (the TCP fallback is for testing only). You also tune the pool ratio ("xPyD") and
+      can give each pool different parallelism — the docs' example runs 8 × TP1 prefill pods feeding
+      2 × TP4 decode pods for a 5k-in / 250-out workload.
+    </div>
+
+    <p>
+      v1.0 added the operational half: a <code>DisaggregatedSet</code> CRD (built on LeaderWorkerSet)
+      manages prefill and decode pools as one unit, with revision-aware routing and lockstep rolling
+      updates, so an upgrade does not strand a decode pod on prefillers of the wrong version.
+    </p>
+  </div>
+</section>
+
+<!-- ═══ 09 TAKEAWAYS ═══ -->
+<section>
+  <div class="container">
+    <div class="eyebrow">09 · Takeaways</div>
+    <h2>The scaling ladder.</h2>
+    <p class="lede">
+      Each rung solves the bottleneck the previous one exposed. Climb only as far as your workload forces you.
+    </p>
+
+    <ol class="ladder">
+      <li><strong>One GPU, vLLM defaults.</strong> Continuous batching + PagedAttention + automatic prefix
+        caching are free. If the model fits, distributed inference is unnecessary — the vLLM docs say so verbatim.</li>
+      <li><strong>Model does not fit → tensor parallelism</strong> across the GPUs of one node
+        (<code>--tensor-parallel-size</code>). No NVLink? Prefer pipeline parallelism.</li>
+      <li><strong>Node does not fit → TP × PP</strong>: TP = GPUs per node, PP = node count.
+        MoE models scale wider with DP attention + expert parallelism instead.</li>
+      <li><strong>Need more throughput → replicate</strong> (data parallelism). The moment you have replicas,
+        routing quality becomes a first-order performance knob — each replica has its own KV cache.</li>
+      <li><strong>Replicas → smart routing.</strong> llm-d's Endpoint Picker: prefix-cache-aware + load-aware
+        scoring. This is the highest-leverage, lowest-risk llm-d feature — adopt it first.</li>
+      <li><strong>Long prompts, strict TTFT SLOs → P/D disaggregation</strong>, separate pools on RDMA,
+        managed by DisaggregatedSet. Verify the fit: it is not for all workloads.</li>
+    </ol>
+
+    <h3>Further reading</h3>
+    <ul style="color:var(--fg-dim);line-height:1.9">
+      <li><a href="https://docs.vllm.ai/en/latest/serving/parallelism_scaling/" target="_blank" rel="noopener">vLLM: parallelism &amp; scaling</a> — the TP/PP/DP/EP flags and sizing rules used in section 05.</li>
+      <li><a href="https://arxiv.org/abs/2309.06180" target="_blank" rel="noopener">PagedAttention paper</a> (SOSP 2023).</li>
+      <li><a href="https://llm-d.ai/docs/architecture" target="_blank" rel="noopener">llm-d architecture docs</a> — Router, EPP, scorers, KV-cache indexer, disaggregation.</li>
+      <li><a href="https://llm-d.ai/docs/well-lit-paths" target="_blank" rel="noopener">llm-d well-lit paths</a> — deployable, benchmarked recipes per feature and per model.</li>
+      <li><a href="https://llm-d.ai/blog/llm-d-announce" target="_blank" rel="noopener">llm-d announcement</a> (May 2025) — the benchmark behind the "3× TTFT" claim.</li>
+      <li><a href="https://cloud.google.com/blog/topics/ai-infrastructure/llm-d-1-0-an-open-source-stack-for-distributed-inference" target="_blank" rel="noopener">llm-d 1.0 announcement</a> (October 2026) — v1.0 features and the Gemini-platform numbers.</li>
+      <li><a href="https://gateway-api-inference-extension.sigs.k8s.io/" target="_blank" rel="noopener">Gateway API Inference Extension</a> — the Kubernetes standard llm-d's router implements.</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    All simulators are illustrative models that run locally in your browser — rates and workloads are
+    synthetic, but every named mechanism, flag, and number is sourced from the
+    <a href="https://docs.vllm.ai" target="_blank" rel="noopener">vLLM docs</a>,
+    <a href="https://llm-d.ai/docs" target="_blank" rel="noopener">llm-d v1.0 docs</a>, and the llm-d
+    announcement posts (benchmark figures are the projects' own, quoted with their context).
+  </div>
+</footer>
+
+<!-- ═══════════════════════════════════════════════════════════
+     SCRIPT
+     ═══════════════════════════════════════════════════════════ -->
+<script>
+'use strict';
+
+function mulberry32(a) {
+  return function() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const $ = id => document.getElementById(id);
+const fmt = n => n.toLocaleString('en-US');
+
+// ────────────────────────────────────────────────────────────
+// 01. GENERATION ANATOMY
+// ────────────────────────────────────────────────────────────
+(() => {
+  const PROMPTS = {
+    short: { toks: 'Summarize this pull request in two sentences .'.split(' '), real: 180 },
+    long:  { toks: ('<system> You are a support agent … <doc 1> shipping policy … <doc 2> refund terms … ' +
+                    '<doc 3> warranty FAQ … <history> 14 prior turns … <question> where is my order ?').split(' '), real: 4200 },
+  };
+  const OUT = { toks: 'Your order shipped on Monday and arrives Thursday ; tracking link below .'.split(' '), real: 220 };
+  const PREFILL_TPS = 12000, DECODE_TPS = 55, OVERHEAD_MS = 25;
+
+  let mode = 'short', animToken = 0;
+
+  function ms(n) { return n < 1000 ? Math.round(n) + ' ms' : (n / 1000).toFixed(2) + ' s'; }
+
+  function render() {
+    animToken++;
+    const my = animToken;
+    const p = PROMPTS[mode];
+    const promptEl = $('gen-prompt'), outEl = $('gen-output');
+    promptEl.innerHTML = p.toks.map(t => `<span class="tok">${t}</span>`).join('');
+    outEl.innerHTML = OUT.toks.map(t => `<span class="tok hidden">${t}</span>`).join('');
+
+    const ttftMs = p.real / PREFILL_TPS * 1000 + OVERHEAD_MS;
+    const decMs = OUT.real / DECODE_TPS * 1000;
+    const totalMs = ttftMs + decMs;
+    $('gen-ttft').textContent = ms(ttftMs);
+    $('gen-itl').textContent = Math.round(1000 / DECODE_TPS) + ' ms/tok';
+    $('gen-total').textContent = ms(totalMs);
+
+    const pfPct = Math.max(3, ttftMs / totalMs * 100);
+    $('gen-tl-pf').style.width = '0%';
+    $('gen-tl-dec').style.width = '0%';
+
+    // prefill sweep
+    const pToks = promptEl.children;
+    const sweepMs = 700;
+    for (let i = 0; i < pToks.length; i++) {
+      setTimeout(() => { if (my === animToken) pToks[i].classList.add('pf'); }, i * (sweepMs / pToks.length));
+    }
+    setTimeout(() => {
+      if (my !== animToken) return;
+      for (const t of pToks) { t.classList.remove('pf'); t.classList.add('pfdone'); }
+      $('gen-tl-pf').style.width = pfPct + '%';
+    }, sweepMs + 150);
+
+    // decode, one token at a time
+    const oToks = outEl.children;
+    const stepMs = 130;
+    for (let i = 0; i < oToks.length; i++) {
+      setTimeout(() => {
+        if (my !== animToken) return;
+        oToks[i].classList.remove('hidden');
+        oToks[i].classList.add('dec');
+        $('gen-tl-dec').style.width = ((100 - pfPct) * (i + 1) / oToks.length) + '%';
+      }, sweepMs + 400 + i * stepMs);
+    }
+  }
+
+  $('gen-short').addEventListener('click', () => { mode = 'short'; $('gen-short').classList.add('on'); $('gen-long').classList.remove('on'); render(); });
+  $('gen-long').addEventListener('click', () => { mode = 'long'; $('gen-long').classList.add('on'); $('gen-short').classList.remove('on'); render(); });
+  $('gen-replay').addEventListener('click', render);
+  render();
+})();
+
+// ────────────────────────────────────────────────────────────
+// 02. KV CACHE CALCULATOR
+// ────────────────────────────────────────────────────────────
+(() => {
+  const MODELS = {
+    '8b':  { layers: 32, kvHeads: 8, headDim: 128, paramsB: 8.0 },
+    '32b': { layers: 64, kvHeads: 8, headDim: 128, paramsB: 32.8 },
+    '70b': { layers: 80, kvHeads: 8, headDim: 128, paramsB: 70.6 },
+  };
+  const GB = 1024 ** 3;
+
+  function calc() {
+    const m = MODELS[$('kv-model').value];
+    const bytesPerParam = Number($('kv-prec').value);
+    const cap = Number($('kv-gpu').value);
+    const ctx = Math.round(Math.pow(2, Number($('kv-ctx').value)));
+    const seqs = Number($('kv-seq').value);
+    $('kv-ctx-val').textContent = fmt(ctx);
+    $('kv-seq-val').textContent = seqs;
+
+    const kvPerTok = 2 * m.layers * m.kvHeads * m.headDim * 2; // KV kept at FP16
+    const weightsGB = m.paramsB * 1e9 * bytesPerParam / GB;
+    const kvGB = kvPerTok * ctx * seqs / GB;
+    const total = weightsGB + kvGB;
+
+    $('kv-pertok').innerHTML = (kvPerTok / 1024).toFixed(0) + ' <small>KB</small>';
+    $('kv-total').innerHTML = kvGB.toFixed(1) + ' <small>GB</small>';
+    $('kv-weights').innerHTML = weightsGB.toFixed(1) + ' <small>GB</small>';
+
+    const scale = Math.max(total, cap) * 1.08;
+    const bar = $('kv-bar');
+    let segs = '';
+    if (total <= cap) {
+      segs = `<div class="seg weights" style="width:${weightsGB / scale * 100}%"></div>` +
+             `<div class="seg kv" style="width:${kvGB / scale * 100}%"></div>`;
+    } else {
+      const fitW = Math.min(weightsGB, cap);
+      const fitK = Math.max(0, cap - weightsGB);
+      segs = `<div class="seg weights" style="width:${fitW / scale * 100}%"></div>` +
+             `<div class="seg kv" style="width:${fitK / scale * 100}%"></div>` +
+             `<div class="seg over" style="width:${(total - cap) / scale * 100}%"></div>`;
+    }
+    bar.innerHTML = segs;
+    $('kv-cap').style.left = (cap / scale * 100) + '%';
+
+    const v = $('kv-verdict');
+    if (total <= cap) {
+      const free = cap - total;
+      const moreSeqs = Math.floor(free * GB / (kvPerTok * ctx));
+      v.innerHTML = `<span class="ok">✓ Fits.</span> <span style="color:var(--fg-dim)">${total.toFixed(1)} GB of ${cap} GB used — headroom for ~${fmt(moreSeqs)} more concurrent request${moreSeqs === 1 ? '' : 's'} at this context length.</span>`;
+    } else {
+      const need = Math.ceil(total / (cap * 0.92));
+      v.innerHTML = `<span class="no">✗ Does not fit:</span> <span style="color:var(--fg-dim)">${total.toFixed(1)} GB &gt; ${cap} GB. You need ~${need} GPUs — tensor parallelism splits weights <em>and</em> KV cache (section 05), or drop precision / context / batch.</span>`;
+    }
+  }
+
+  ['kv-model', 'kv-prec', 'kv-gpu', 'kv-ctx', 'kv-seq'].forEach(id => $(id).addEventListener('input', calc));
+  calc();
+})();
+
+// ────────────────────────────────────────────────────────────
+// 03a. BATCHING RACE
+// ────────────────────────────────────────────────────────────
+(() => {
+  const SLOTS = 6;
+  const rng = mulberry32(42);
+  const REQS = Array.from({ length: 2000 }, (_, i) => ({ id: i + 1, pf: 5 + Math.floor(rng() * 12), dec: 20 + Math.floor(rng() * 110) }));
+
+  function makeSim(mode) {
+    return { mode, next: 0, slots: Array(SLOTS).fill(null), done: 0, toks: 0, busy: 0, ticks: 0 };
+  }
+  function take(sim) { return sim.next < REQS.length ? { req: REQS[sim.next++], phase: 'pf', left: 0 } : null; }
+  function start(s) { if (s) s.left = s.req.pf; return s; }
+
+  function tick(sim) {
+    sim.ticks++;
+    let active = 0;
+    for (let i = 0; i < SLOTS; i++) {
+      const s = sim.slots[i];
+      if (!s) continue;
+      active++;
+      s.left--;
+      if (s.left <= 0) {
+        if (s.phase === 'pf') { s.phase = 'dec'; s.left = s.req.dec; }
+        else {
+          sim.done++; sim.toks += s.req.dec;
+          sim.slots[i] = sim.mode === 'cont' ? start(take(sim)) : null;
+        }
+      }
+    }
+    sim.busy += active;
+    if (sim.mode === 'static' && sim.slots.every(s => s === null)) {
+      for (let i = 0; i < SLOTS; i++) sim.slots[i] = start(take(sim));
+    }
+  }
+
+  function render(sim, slotsEl, statsEl) {
+    let html = '';
+    for (let i = 0; i < SLOTS; i++) {
+      const s = sim.slots[i];
+      if (!s) { html += `<div class="slot idle"><span class="sid">idle</span><div class="bar"></div></div>`; continue; }
+      const total = s.req.pf + s.req.dec;
+      const donePf = s.phase === 'pf' ? s.req.pf - s.left : s.req.pf;
+      const doneDec = s.phase === 'dec' ? s.req.dec - s.left : 0;
+      html += `<div class="slot"><span class="sid">#${s.req.id}</span><div class="bar">` +
+              `<div class="pf" style="width:${donePf / total * 100}%"></div>` +
+              `<div class="dec" style="width:${doneDec / total * 100}%"></div></div></div>`;
+    }
+    slotsEl.innerHTML = html;
+    const util = sim.ticks ? (sim.busy / (sim.ticks * SLOTS) * 100).toFixed(0) : 0;
+    statsEl.innerHTML = `completed: <b>${sim.done}</b> · tokens: <b>${fmt(sim.toks)}</b> · GPU slot utilization: <b>${util}%</b>`;
+  }
+
+  let simS, simC, timer = null;
+  function reset() {
+    if (timer) { clearInterval(timer); timer = null; $('batch-toggle').textContent = '▶ Start'; }
+    simS = makeSim('static'); simC = makeSim('cont');
+    for (let i = 0; i < SLOTS; i++) { simS.slots[i] = start(take(simS)); simC.slots[i] = start(take(simC)); }
+    render(simS, $('batch-static'), $('batch-static-stats'));
+    render(simC, $('batch-cont'), $('batch-cont-stats'));
+  }
+  $('batch-toggle').addEventListener('click', () => {
+    if (timer) { clearInterval(timer); timer = null; $('batch-toggle').textContent = '▶ Resume'; return; }
+    $('batch-toggle').textContent = '⏸ Pause';
+    timer = setInterval(() => {
+      for (let k = 0; k < 2; k++) { tick(simS); tick(simC); }
+      render(simS, $('batch-static'), $('batch-static-stats'));
+      render(simC, $('batch-cont'), $('batch-cont-stats'));
+    }, 50);
+  });
+  $('batch-reset').addEventListener('click', reset);
+  reset();
+})();
+
+// ────────────────────────────────────────────────────────────
+// 03b. PAGED ATTENTION GRIDS (static illustration)
+// ────────────────────────────────────────────────────────────
+(() => {
+  // lightness band of one hue for request identity (per palette rule)
+  const SHADES = ['#39507e', '#5b7fc7', '#9db9f9'];
+  const NAMES = ['request A', 'request B', 'request C'];
+  const used = [9, 4, 13];        // blocks actually used
+  const RESERVED = 16;            // contiguous reservation per request
+
+  // contiguous: 3 rows of 16 → 48 cells
+  let html = '';
+  for (let r = 0; r < 3; r++) {
+    for (let c = 0; c < RESERVED; c++) {
+      if (c < used[r]) html += `<div class="blk" style="background:${SHADES[r]};border-color:${SHADES[r]}" title="${NAMES[r]} — used"></div>`;
+      else html += `<div class="blk waste" title="${NAMES[r]} — reserved but unused"></div>`;
+    }
+  }
+  $('grid-contig').innerHTML = html;
+
+  // paged: same 48-cell pool, blocks interleaved on demand, rest free
+  const owners = [];
+  used.forEach((u, r) => { for (let i = 0; i < u; i++) owners.push(r); });
+  // deterministic interleave
+  const rng = mulberry32(7);
+  for (let i = owners.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [owners[i], owners[j]] = [owners[j], owners[i]]; }
+  html = '';
+  for (let i = 0; i < 48; i++) {
+    if (i < owners.length) { const r = owners[i]; html += `<div class="blk" style="background:${SHADES[r]};border-color:${SHADES[r]}" title="${NAMES[r]}"></div>`; }
+    else html += `<div class="blk" title="free"></div>`;
+  }
+  $('grid-paged').innerHTML = html;
+
+  $('paged-legend').innerHTML =
+    SHADES.map((s, i) => `<span><span class="sw" style="background:${s}"></span>${NAMES[i]} (${used[i]} blocks)</span>`).join('') +
+    `<span><span class="sw" style="background:repeating-linear-gradient(45deg,transparent,transparent 3px,rgba(247,118,142,0.4) 3px,rgba(247,118,142,0.4) 6px)"></span>reserved, unused (waste)</span>` +
+    `<span><span class="sw" style="background:var(--bg);border:1px solid var(--border)"></span>free</span>`;
+})();
+
+// ────────────────────────────────────────────────────────────
+// 04. PREFIX CACHING DEMO
+// ────────────────────────────────────────────────────────────
+(() => {
+  const SYS = 380, BLOCK = 16, PREFILL_TPS = 8000, OVERHEAD = 30;
+  const TURNS = [
+    { u: 140, a: 190 }, { u: 70, a: 160 }, { u: 90, a: 210 }, { u: 60, a: 120 }, { u: 110, a: 180 },
+  ];
+  let turn = 0, cachedTok = 0, lastPrompt = 0;
+
+  function ms(tok) { return Math.round(tok / PREFILL_TPS * 1000 + OVERHEAD); }
+
+  function renderGrid(prompt, cachedBlocks) {
+    const total = Math.ceil(prompt / BLOCK);
+    let html = '';
+    for (let i = 0; i < total; i++) html += `<div class="pfx-blk ${i < cachedBlocks ? 'cached' : 'new'}"></div>`;
+    $('pfx-grid').innerHTML = html;
+  }
+
+  function send() {
+    if (turn >= TURNS.length) { $('pfx-log').textContent = 'Conversation finished — press Reset.'; return; }
+    let prompt = SYS;
+    for (let j = 0; j < turn; j++) prompt += TURNS[j].u + TURNS[j].a;
+    prompt += TURNS[turn].u;
+    const cachedBlocks = Math.floor(Math.min(cachedTok, prompt) / BLOCK);
+    const cachedT = cachedBlocks * BLOCK;
+    renderGrid(prompt, cachedBlocks);
+    $('pfx-prompt').textContent = fmt(prompt);
+    $('pfx-hit').textContent = (cachedT / prompt * 100).toFixed(0) + '%';
+    $('pfx-ttft').innerHTML = `${ms(prompt)} <small>/</small> ${ms(prompt - cachedT)} <small>ms</small>`;
+    $('pfx-log').textContent = `Turn ${turn + 1}: prompt = system + history + new message. ` +
+      (cachedT ? `${fmt(cachedT)} of ${fmt(prompt)} tokens skip prefill.` : `Cold start — every block is prefilled.`);
+    cachedTok = prompt + TURNS[turn].a;   // after serving, the full context is cached
+    lastPrompt = prompt;
+    turn++;
+  }
+  function evict() {
+    cachedTok = 0;
+    if (lastPrompt) {
+      renderGrid(lastPrompt, 0);
+      $('pfx-hit').textContent = '0%';
+      $('pfx-log').textContent = 'The next turn landed on a different replica: its cache has none of these blocks. Full re-prefill.';
+    }
+  }
+  function reset() {
+    turn = 0; cachedTok = 0; lastPrompt = 0;
+    $('pfx-grid').innerHTML = ''; $('pfx-prompt').textContent = '0';
+    $('pfx-hit').textContent = '—'; $('pfx-ttft').textContent = '—';
+    $('pfx-log').textContent = 'Press "Send next turn" to start the conversation.';
+  }
+  $('pfx-send').addEventListener('click', send);
+  $('pfx-evict').addEventListener('click', evict);
+  $('pfx-reset').addEventListener('click', reset);
+})();
+
+// ────────────────────────────────────────────────────────────
+// 05. PARALLELISM EXPLORER
+// ────────────────────────────────────────────────────────────
+(() => {
+  const svg = $('par-svg');
+  const cap = $('par-caption');
+
+  function gpu(x, y, lines, dim) {
+    const fill = dim ? 'rgba(42,49,66,0.4)' : 'rgba(122,162,247,0.10)';
+    const stroke = dim ? '#2a3142' : '#7aa2f7';
+    let t = '';
+    lines.forEach((l, i) => {
+      t += `<text x="${x + 75}" y="${y + 34 + i * 15}" text-anchor="middle" fill="${dim ? '#5f6a7d' : (i === 0 ? '#e6edf3' : '#9aa4b2')}" font-size="${i === 0 ? 12 : 10}" font-family="monospace">${l}</text>`;
+    });
+    return `<rect x="${x}" y="${y}" width="150" height="84" rx="8" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>` + t;
+  }
+  function node(x, label, dim) {
+    return `<rect x="${x}" y="60" width="340" height="240" rx="12" fill="none" stroke="${dim ? '#2a3142' : '#5f6a7d'}" stroke-width="1.5" stroke-dasharray="6,4"/>` +
+           `<text x="${x + 170}" y="48" text-anchor="middle" fill="${dim ? '#5f6a7d' : '#9aa4b2'}" font-size="12" font-family="monospace">${label}</text>`;
+  }
+  function arrow(x1, y1, x2, y2, color, label, dash) {
+    const mx = (x1 + x2) / 2, myy = (y1 + y2) / 2;
+    return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="2" ${dash ? 'stroke-dasharray="5,4"' : ''} marker-end="url(#par-ah)"/>` +
+           (label ? `<rect x="${mx - 78}" y="${myy - 10}" width="156" height="18" rx="4" fill="#0b0e14" opacity="0.85"/><text x="${mx}" y="${myy + 3}" text-anchor="middle" fill="${color}" font-size="10" font-family="monospace">${label}</text>` : '');
+  }
+  const DEFS = `<defs><marker id="par-ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#e0af68"/></marker></defs>`;
+  // GPU positions: node1 at x=30, node2 at x=390; 2×2 GPUs inside each
+  const POS = n => {
+    const bx = n === 0 ? 45 : 405;
+    return [[bx, 80], [bx + 170, 80], [bx, 196], [bx + 170, 196]];
+  };
+
+  const MODES = {
+    tp: () => {
+      let s = DEFS + node(30, 'node 1 (NVLink inside)', false) + node(390, 'node 2', true);
+      POS(0).forEach((p, i) => s += gpu(p[0], p[1], [`GPU ${i}`, 'all 80 layers', '¼ of every matrix'], false));
+      POS(1).forEach((p, i) => s += gpu(p[0], p[1], [`GPU ${i + 4}`, 'idle'], true));
+      // ring arrows among node1 GPUs
+      s += arrow(195, 122, 215, 122, '#e0af68', '', false);
+      s += arrow(290, 164, 290, 196, '#e0af68', '', false);
+      s += arrow(215, 238, 195, 238, '#e0af68', '', false);
+      s += arrow(120, 196, 120, 164, '#e0af68', '', false);
+      s += `<text x="200" y="320" text-anchor="middle" fill="#e0af68" font-size="11" font-family="monospace">all-reduce across all 4 GPUs, every layer, every token</text>`;
+      return s + capText('Tensor parallelism (TP=4)',
+        'Every weight matrix is cut into 4 shards; the 4 GPUs compute each layer together and merge partial results with an all-reduce. The KV cache is sharded too. One logical GPU with 4× memory and 4× compute — at the price of constant chatter, so keep TP inside an NVLink domain.',
+        'vllm serve meta-llama/Llama-3.1-70B-Instruct --tensor-parallel-size 4');
+    },
+    pp: () => {
+      let s = DEFS + node(30, 'node 1 — stage 1', false) + node(390, 'node 2 — stage 2', false);
+      POS(0).forEach((p, i) => s += gpu(p[0], p[1], [`GPU ${i}`, 'layers 1–40', '¼ each (TP4)'], false));
+      POS(1).forEach((p, i) => s += gpu(p[0], p[1], [`GPU ${i + 4}`, 'layers 41–80', '¼ each (TP4)'], false));
+      s += arrow(368, 180, 403, 180, '#e0af68', '', false);
+      s += `<text x="380" y="320" text-anchor="middle" fill="#e0af68" font-size="11" font-family="monospace">activations cross the node boundary once per stage — no all-reduce between nodes</text>`;
+      return s + capText('Pipeline × tensor parallelism (TP=4, PP=2)',
+        'The layer stack splits into sequential stages — one per node — and TP runs inside each stage. Only activations cross the node boundary, once per stage, so a plain datacenter network suffices. The cost is pipeline latency and bubbles, which vLLM fills by running many requests through the pipeline concurrently.',
+        'vllm serve big-model --tensor-parallel-size 4 --pipeline-parallel-size 2   # 8 GPUs');
+    },
+    dp: () => {
+      let s = DEFS + node(30, 'replica 1 (TP4)', false) + node(390, 'replica 2 (TP4)', false);
+      POS(0).forEach((p, i) => s += gpu(p[0], p[1], [`GPU ${i}`, 'full copy', 'own KV cache'], false));
+      POS(1).forEach((p, i) => s += gpu(p[0], p[1], [`GPU ${i + 4}`, 'full copy', 'own KV cache'], false));
+      s += `<rect x="310" y="8" width="140" height="30" rx="8" fill="rgba(224,175,104,0.12)" stroke="#e0af68"/><text x="380" y="27" text-anchor="middle" fill="#e0af68" font-size="12" font-family="monospace">router</text>`;
+      s += arrow(340, 38, 220, 62, '#e0af68', '', false);
+      s += arrow(420, 38, 540, 62, '#e0af68', '', false);
+      return s + capText('Data parallelism (DP=2)',
+        'Whole replicas, no communication between them — each holds its own weights and its own, independent KV cache. Throughput scales linearly. The new problem: which replica gets each request? That router decision is sections 06–07.',
+        'vllm serve model --data-parallel-size 2 --tensor-parallel-size 4   # or N separate deployments + LB');
+    },
+    ep: () => {
+      let s = DEFS + node(30, 'node 1', false) + node(390, 'node 2', false);
+      const lbl = i => [`GPU ${i}`, `experts ${i * 32 + 1}–${(i + 1) * 32}`, 'attention: DP'];
+      POS(0).forEach((p, i) => s += gpu(p[0], p[1], lbl(i), false));
+      POS(1).forEach((p, i) => s += gpu(p[0], p[1], lbl(i + 4), false));
+      s += arrow(370, 140, 405, 140, '#e0af68', '', false);
+      s += arrow(405, 220, 370, 220, '#e0af68', '', false);
+      s += `<text x="380" y="320" text-anchor="middle" fill="#e0af68" font-size="11" font-family="monospace">all-to-all: every token is dispatched to its experts, each MoE layer</text>`;
+      return s + capText('Expert parallelism (EP, for MoE)',
+        'A sparse MoE model activates only a few experts per token, so the experts (most of the weights) spread across all GPUs while attention runs data-parallel. Tokens are dispatched all-to-all to wherever their experts live. This is "wide EP" — how DeepSeek-class models serve economically; llm-d ships it as a well-lit path.',
+        'vllm serve deepseek-model --data-parallel-size 4 --enable-expert-parallel');
+    },
+  };
+  function capText(title, body, cmd) {
+    cap.innerHTML = `<strong style="color:var(--fg)">${title}.</strong> ${body}<pre class="code" style="margin:10px 0 0">${cmd}</pre>`;
+    return '';
+  }
+  function show(m) {
+    cap.innerHTML = '';
+    svg.innerHTML = MODES[m]();
+  }
+  document.querySelectorAll('[data-par]').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('[data-par]').forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    show(b.dataset.par);
+  }));
+  show('tp');
+})();
+
+// ────────────────────────────────────────────────────────────
+// 06. LOAD BALANCER SIMULATOR
+// ────────────────────────────────────────────────────────────
+(() => {
+  const N = 4, TICK_MS = 20, PREFILL_PER_TICK = 300, CACHE_BUDGET = 100000;
+
+  function genWorkload(seed) {
+    const rng = mulberry32(seed);
+    const reqs = [];
+    for (let s = 0; s < 20; s++) {
+      const prefix = 4000 + Math.floor(rng() * 8000);
+      const nTurns = 3 + Math.floor(rng() * 3);
+      let t = Math.floor(rng() * 400);
+      let cum = prefix;
+      for (let k = 0; k < nTurns; k++) {
+        const newT = 150 + Math.floor(rng() * 600);
+        const outT = 80 + Math.floor(rng() * 160);
+        reqs.push({ sid: 's' + s, arrival: t, prompt: cum + newT, out: outT });
+        cum += newT + outT;
+        t += 60 + Math.floor(rng() * 140);
+      }
+    }
+    for (let w = 0; w < 3; w++) {
+      reqs.push({ sid: 'whale' + w, arrival: 100 + w * 200, prompt: 12000 + Math.floor(rng() * 8000), out: 100 });
+    }
+    reqs.sort((a, b) => a.arrival - b.arrival);
+    return reqs;
+  }
+  const WORKLOAD = genWorkload(1337);
+
+  function makeReplica(i) {
+    return { i, queue: [], pre: null, dec: [], cache: new Map(), cacheTok: 0, served: 0, hitTok: 0, prTok: 0 };
+  }
+  function cachedFor(r, req) {
+    const e = r.cache.get(req.sid);
+    return e ? Math.min(e.t, req.prompt) : 0;
+  }
+  function load(r) { return r.queue.length + (r.pre ? 1 : 0); }
+  function touchCache(r, sid, tokens, now) {
+    const prev = r.cache.get(sid);
+    r.cacheTok += tokens - (prev ? prev.t : 0);
+    r.cache.set(sid, { t: tokens, last: now });
+    while (r.cacheTok > CACHE_BUDGET && r.cache.size > 1) {
+      let lruKey = null, lru = Infinity;
+      for (const [k, v] of r.cache) if (v.last < lru) { lru = v.last; lruKey = k; }
+      r.cacheTok -= r.cache.get(lruKey).t;
+      r.cache.delete(lruKey);
+    }
+  }
+  function pick(strategy, replicas, req, rrState) {
+    if (strategy === 'rr') return replicas[rrState.i++ % N];
+    if (strategy === 'least') {
+      let best = replicas[0];
+      for (const r of replicas) if (load(r) < load(best)) best = r;
+      return best;
+    }
+    // prefix-aware: weighted sum, same shape as llm-d scorers
+    let best = null, bestScore = -1;
+    for (const r of replicas) {
+      const match = cachedFor(r, req) / req.prompt;
+      const loadScore = 1 - Math.min(load(r), 8) / 8;
+      const score = 2.0 * match + 1.0 * loadScore;
+      if (score > bestScore || (score === bestScore && best && load(r) < load(best))) { bestScore = score; best = r; }
+    }
+    return best;
+  }
+  function stepReplica(r, now, ttfts) {
+    if (!r.pre && r.queue.length) {
+      r.pre = r.queue.shift();
+      r.pre.left = Math.max(1, Math.ceil(r.pre.uncached / PREFILL_PER_TICK));
+    }
+    if (r.pre) {
+      r.pre.left--;
+      if (r.pre.left <= 0) {
+        ttfts.push(now - r.pre.req.arrival + 1);
+        r.hitTok += r.pre.cached;
+        r.prTok += r.pre.req.prompt;
+        r.served++;
+        r.dec.push({ left: r.pre.req.out });
+        touchCache(r, r.pre.req.sid, r.pre.req.prompt + r.pre.req.out, now);
+        r.pre = null;
+      }
+    }
+    for (const d of r.dec) d.left--;
+    r.dec = r.dec.filter(d => d.left > 0);
+  }
+
+  function simulate(strategy, onTick) {
+    const replicas = Array.from({ length: N }, (_, i) => makeReplica(i));
+    const rrState = { i: 0 };
+    const ttfts = [];
+    let i = 0, now = 0, maxQ = 0;
+    const total = WORKLOAD.length;
+    while ((i < total || ttfts.length < total) && now < 30000) {
+      while (i < total && WORKLOAD[i].arrival <= now) {
+        const req = WORKLOAD[i++];
+        const r = pick(strategy, replicas, req, rrState);
+        r.queue.push({ req, uncached: req.prompt - cachedFor(r, req), cached: cachedFor(r, req) });
+      }
+      for (const r of replicas) { stepReplica(r, now, ttfts); maxQ = Math.max(maxQ, load(r)); }
+      now++;
+      if (onTick && !onTick(replicas, now, ttfts, i)) return null; // paused/aborted
+    }
+    ttfts.sort((a, b) => a - b);
+    const mean = ttfts.reduce((a, b) => a + b, 0) / ttfts.length;
+    const p95 = ttfts[Math.min(ttfts.length - 1, Math.ceil(0.95 * ttfts.length) - 1)];
+    const hit = replicas.reduce((a, r) => a + r.hitTok, 0) / replicas.reduce((a, r) => a + r.prTok, 0);
+    return { mean: mean * TICK_MS, p95: p95 * TICK_MS, hit, maxQ, n: ttfts.length };
+  }
+
+  // ── live animated view ──
+  let liveState = null, liveTimer = null;
+  function liveReset() {
+    if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+    $('lb-toggle').textContent = '▶ Start';
+    liveState = {
+      replicas: Array.from({ length: N }, (_, i) => makeReplica(i)),
+      rrState: { i: 0 }, ttfts: [], i: 0, now: 0,
+      strategy: $('lb-strategy').value,
+    };
+    renderLive();
+  }
+  function liveTick() {
+    const st = liveState;
+    const total = WORKLOAD.length;
+    for (let k = 0; k < 3; k++) { // 3 ticks per frame
+      if (st.i >= total && st.ttfts.length >= total) { clearInterval(liveTimer); liveTimer = null; $('lb-toggle').textContent = '✓ Done'; break; }
+      while (st.i < total && WORKLOAD[st.i].arrival <= st.now) {
+        const req = WORKLOAD[st.i++];
+        const r = pick(st.strategy, st.replicas, req, st.rrState);
+        r.queue.push({ req, uncached: req.prompt - cachedFor(r, req), cached: cachedFor(r, req) });
+      }
+      for (const r of st.replicas) stepReplica(r, st.now, st.ttfts);
+      st.now++;
+    }
+    renderLive();
+  }
+  function renderLive() {
+    const st = liveState;
+    let html = '';
+    for (const r of st.replicas) {
+      const hit = r.prTok ? (r.hitTok / r.prTok * 100).toFixed(0) : '—';
+      let q = '';
+      if (r.pre) q += `<span class="qreq active" title="prefilling"></span>`;
+      for (let j = 0; j < Math.min(r.queue.length, 20); j++) q += `<span class="qreq"></span>`;
+      html += `<div class="replica"><h5>replica ${r.i}</h5>
+        <div class="line"><span>queue</span><b>${r.queue.length}${r.pre ? ' +1 prefilling' : ''}</b></div>
+        <div class="qbar">${q || '<span style="color:var(--fg-dimmer)">empty</span>'}</div>
+        <div class="line"><span>prefill left</span><b>${r.pre ? fmt(Math.max(0, r.pre.left * PREFILL_PER_TICK)) + ' tok' : '—'}</b></div>
+        <div class="line"><span>decoding</span><b>${r.dec.length} streams</b></div>
+        <div class="line"><span>prefix cache</span><b>${(r.cacheTok / CACHE_BUDGET * 100).toFixed(0)}%</b></div>
+        <div class="cache-bar"><div class="fill" style="width:${Math.min(100, r.cacheTok / CACHE_BUDGET * 100)}%"></div></div>
+        <div class="line"><span>served / hit</span><b>${r.served} / ${hit}%</b></div>
+      </div>`;
+    }
+    $('lb-replicas').innerHTML = html;
+    const done = st.ttfts.length;
+    const mean = done ? (st.ttfts.reduce((a, b) => a + b, 0) / done * TICK_MS).toFixed(0) : '—';
+    $('lb-live-stats').innerHTML =
+      `t = <b>${(st.now * TICK_MS / 1000).toFixed(1)} s</b> · completed <b>${done}/${WORKLOAD.length}</b> · running mean TTFT <b>${mean} ms</b>`;
+  }
+  $('lb-toggle').addEventListener('click', () => {
+    if (liveTimer) { clearInterval(liveTimer); liveTimer = null; $('lb-toggle').textContent = '▶ Resume'; return; }
+    if (!liveState || liveState.ttfts.length >= WORKLOAD.length) liveReset();
+    liveState.strategy = $('lb-strategy').value;
+    $('lb-toggle').textContent = '⏸ Pause';
+    liveTimer = setInterval(liveTick, 50);
+  });
+  $('lb-reset').addEventListener('click', liveReset);
+  $('lb-strategy').addEventListener('change', liveReset);
+  liveReset();
+
+  // ── instant comparison ──
+  $('lb-compare').addEventListener('click', () => {
+    const rows = [
+      ['Round-robin', simulate('rr')],
+      ['Least-loaded', simulate('least')],
+      ['Prefix-aware + load', simulate('prefix')],
+    ];
+    const maxMean = Math.max(...rows.map(r => r[1].mean));
+    const bestMean = Math.min(...rows.map(r => r[1].mean));
+    const bestP95 = Math.min(...rows.map(r => r[1].p95));
+    const bestHit = Math.max(...rows.map(r => r[1].hit));
+    const tb = $('lb-results').querySelector('tbody');
+    tb.innerHTML = rows.map(([name, r]) => `
+      <tr>
+        <td>${name}</td>
+        <td class="${r.mean === bestMean ? 'best' : ''}">${Math.round(r.mean)} ms<div class="mini-bar" style="width:${r.mean / maxMean * 100}%"></div></td>
+        <td class="${r.p95 === bestP95 ? 'best' : ''}">${Math.round(r.p95)} ms</td>
+        <td class="${r.hit === bestHit ? 'best' : ''}">${(r.hit * 100).toFixed(0)}%</td>
+        <td>${r.maxQ} requests</td>
+      </tr>`).join('');
+    $('lb-results').style.display = '';
+    $('lb-note').style.display = '';
+  });
+})();
+
+// ────────────────────────────────────────────────────────────
+// 07a. ARCHITECTURE SVG
+// ────────────────────────────────────────────────────────────
+(() => {
+  const box = (x, y, w, h, label, sub, color) => `
+    <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="10" fill="rgba(122,162,247,0.07)" stroke="${color || '#5f6a7d'}" stroke-width="1.5"/>
+    <text x="${x + w / 2}" y="${y + 22}" text-anchor="middle" fill="#e6edf3" font-size="13" font-family="monospace" font-weight="700">${label}</text>
+    ${sub ? `<text x="${x + w / 2}" y="${y + 39}" text-anchor="middle" fill="#9aa4b2" font-size="10" font-family="monospace">${sub}</text>` : ''}`;
+  const chip = (x, y, label) => `
+    <rect x="${x}" y="${y}" width="86" height="24" rx="12" fill="#0b0e14" stroke="#7aa2f7"/>
+    <text x="${x + 43}" y="${y + 16}" text-anchor="middle" fill="#7aa2f7" font-size="10" font-family="monospace">${label}</text>`;
+  const pod = (x, y, i) => `
+    <rect x="${x}" y="${y}" width="170" height="52" rx="8" fill="rgba(122,162,247,0.08)" stroke="#7aa2f7"/>
+    <text x="${x + 85}" y="${y + 21}" text-anchor="middle" fill="#e6edf3" font-size="11" font-family="monospace">vLLM pod ${i}</text>
+    <text x="${x + 85}" y="${y + 38}" text-anchor="middle" fill="#9aa4b2" font-size="9" font-family="monospace">weights + KV cache + queue</text>`;
+
+  $('arch-svg').innerHTML = `
+    <defs><marker id="arch-ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#7aa2f7"/></marker>
+    <marker id="arch-ah2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#9ece6a"/></marker>
+    <marker id="arch-aho" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#e0af68"/></marker></defs>
+
+    ${box(20, 140, 100, 56, 'client', 'OpenAI API', '#5f6a7d')}
+    ${box(170, 130, 130, 76, 'Gateway', 'proxy / HTTPRoute', '#e0af68')}
+    ${box(350, 60, 180, 216, 'Endpoint Picker', 'the llm-d scheduler', '#7aa2f7')}
+    ${chip(397, 112, 'filter')}
+    ${chip(397, 144, 'score')}
+    ${chip(397, 176, 'pick')}
+    <text x="440" y="226" text-anchor="middle" fill="#9aa4b2" font-size="10" font-family="monospace">KV-cache indexer</text>
+    <rect x="372" y="234" width="136" height="26" rx="6" fill="#0b0e14" stroke="#9ece6a"/>
+    <text x="440" y="251" text-anchor="middle" fill="#9ece6a" font-size="9" font-family="monospace">block key → pods</text>
+
+    ${pod(565, 60, 1)}${pod(565, 138, 2)}${pod(565, 216, 3)}
+
+    <line x1="120" y1="168" x2="166" y2="168" stroke="#7aa2f7" stroke-width="2" marker-end="url(#arch-ah)"/>
+    <line x1="300" y1="150" x2="346" y2="150" stroke="#7aa2f7" stroke-width="2" marker-end="url(#arch-ah)"/>
+    <line x1="346" y1="180" x2="300" y2="180" stroke="#7aa2f7" stroke-width="2" marker-end="url(#arch-ah)"/>
+    <text x="323" y="140" text-anchor="middle" fill="#9aa4b2" font-size="9" font-family="monospace">ext-proc</text>
+
+    <path d="M 292 202 C 340 312, 470 318, 558 254" fill="none" stroke="#e0af68" stroke-width="2" marker-end="url(#arch-aho)"/>
+    <text x="330" y="340" text-anchor="middle" fill="#e0af68" font-size="10" font-family="monospace">request forwarded to the picked pod</text>
+
+    <path d="M 565 86 C 540 86, 540 240, 510 244" fill="none" stroke="#9ece6a" stroke-width="1.5" stroke-dasharray="4,4" marker-end="url(#arch-ah2)"/>
+    <path d="M 565 164 C 545 164, 545 245, 510 247" fill="none" stroke="#9ece6a" stroke-width="1.5" stroke-dasharray="4,4"/>
+    <text x="620" y="340" text-anchor="middle" fill="#9ece6a" font-size="10" font-family="monospace">KV-events (ZMQ): BlockStored / BlockRemoved</text>`;
+})();
+
+// ────────────────────────────────────────────────────────────
+// 07b. SCORER PLAYGROUND
+// ────────────────────────────────────────────────────────────
+(() => {
+  const PROMPT_BLOCKS = 16, MAX_Q = 12;
+  let pods = [];
+  let seed = 11;
+
+  function randomize() {
+    const rng = mulberry32(seed++);
+    pods = Array.from({ length: 4 }, (_, i) => ({
+      name: 'pod-' + i,
+      match: Math.floor(rng() * (PROMPT_BLOCKS + 1)),
+      queue: Math.floor(rng() * (MAX_Q + 1)),
+      kv: 0.1 + rng() * 0.85,
+    }));
+    render();
+  }
+  function render() {
+    const wP = Number($('w-pfx').value), wQ = Number($('w-q').value), wK = Number($('w-kv').value);
+    $('w-pfx-val').textContent = wP.toFixed(1);
+    $('w-q-val').textContent = wQ.toFixed(1);
+    $('w-kv-val').textContent = wK.toFixed(1);
+
+    const rows = pods.map(p => {
+      const sP = p.match / PROMPT_BLOCKS;
+      const sQ = (MAX_Q - p.queue) / MAX_Q;
+      const sK = 1 - p.kv;
+      return { p, sP, sQ, sK, total: wP * sP + wQ * sQ + wK * sK };
+    });
+    const max = Math.max(...rows.map(r => r.total));
+    const bar = v => `<div class="sbar" style="width:${Math.max(2, v * 100)}%"></div>`;
+    $('scorer-table').querySelector('tbody').innerHTML = rows.map(r => `
+      <tr class="${r.total === max ? 'winner' : ''}">
+        <td>${r.p.name}${r.total === max ? ' ◀' : ''}</td>
+        <td>${r.p.match}/${PROMPT_BLOCKS} blocks</td>
+        <td>${r.p.queue} waiting</td>
+        <td>${(r.p.kv * 100).toFixed(0)}%</td>
+        <td>${r.sP.toFixed(2)}${bar(r.sP)}</td>
+        <td>${r.sQ.toFixed(2)}${bar(r.sQ)}</td>
+        <td>${r.sK.toFixed(2)}${bar(r.sK)}</td>
+        <td class="total">${r.total.toFixed(2)}</td>
+      </tr>`).join('');
+  }
+  ['w-pfx', 'w-q', 'w-kv'].forEach(id => $(id).addEventListener('input', render));
+  $('scorer-rand').addEventListener('click', randomize);
+  randomize();
+})();
+
+// ────────────────────────────────────────────────────────────
+// 08. P/D DISAGGREGATION WALKTHROUGH
+// ────────────────────────────────────────────────────────────
+(() => {
+  const svg = $('pd-svg');
+  svg.innerHTML = `
+    <defs>
+      <marker id="pd-ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#7aa2f7"/></marker>
+      <marker id="pd-ahw" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#e0af68"/></marker>
+      <marker id="pd-ahg" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#9ece6a"/></marker>
+    </defs>
+    <g id="pd-g1">
+      <rect x="20" y="130" width="110" height="60" rx="10" fill="rgba(122,162,247,0.07)" stroke="#5f6a7d" stroke-width="1.5"/>
+      <text x="75" y="156" text-anchor="middle" fill="#e6edf3" font-size="12" font-family="monospace" font-weight="700">gateway</text>
+      <text x="75" y="173" text-anchor="middle" fill="#9aa4b2" font-size="9" font-family="monospace">+ EPP</text>
+    </g>
+    <g id="pd-g-prefill">
+      <rect x="300" y="30" width="190" height="88" rx="10" fill="rgba(224,175,104,0.08)" stroke="#e0af68" stroke-width="1.5"/>
+      <text x="395" y="56" text-anchor="middle" fill="#e0af68" font-size="12" font-family="monospace" font-weight="700">prefill pod (P)</text>
+      <text x="395" y="74" text-anchor="middle" fill="#9aa4b2" font-size="9" font-family="monospace">llm-d.ai/role=prefill</text>
+      <text x="395" y="90" text-anchor="middle" fill="#9aa4b2" font-size="9" font-family="monospace">compute-bound · e.g. 8 × TP1</text>
+    </g>
+    <g id="pd-g-decode">
+      <rect x="300" y="200" width="190" height="100" rx="10" fill="rgba(122,162,247,0.08)" stroke="#7aa2f7" stroke-width="1.5"/>
+      <text x="395" y="226" text-anchor="middle" fill="#7aa2f7" font-size="12" font-family="monospace" font-weight="700">decode pod (D)</text>
+      <text x="395" y="244" text-anchor="middle" fill="#9aa4b2" font-size="9" font-family="monospace">llm-d.ai/role=decode</text>
+      <rect x="318" y="256" width="154" height="28" rx="6" fill="#0b0e14" stroke="#5f6a7d"/>
+      <text x="395" y="274" text-anchor="middle" fill="#9aa4b2" font-size="9" font-family="monospace">routing-proxy sidecar</text>
+    </g>
+    <g id="pd-s1" class="pd-fade">
+      <line x1="0" y1="160" x2="16" y2="160" stroke="#7aa2f7" stroke-width="2" marker-end="url(#pd-ah)"/>
+      <text x="70" y="115" text-anchor="middle" fill="#9aa4b2" font-size="10" font-family="monospace">request in</text>
+    </g>
+    <g id="pd-s2" class="pd-fade">
+      <line x1="130" y1="175" x2="296" y2="255" stroke="#7aa2f7" stroke-width="2" marker-end="url(#pd-ah)"/>
+      <text x="196" y="246" text-anchor="middle" fill="#7aa2f7" font-size="9" font-family="monospace">to D's sidecar, with header</text>
+      <text x="196" y="260" text-anchor="middle" fill="#7aa2f7" font-size="9" font-family="monospace">x-llm-d-prefiller-host-port</text>
+    </g>
+    <g id="pd-s3" class="pd-fade">
+      <line x1="318" y1="252" x2="340" y2="122" stroke="#e0af68" stroke-width="2" marker-end="url(#pd-ahw)"/>
+      <text x="268" y="180" text-anchor="middle" fill="#e0af68" font-size="9" font-family="monospace">prefill call</text>
+      <text x="268" y="193" text-anchor="middle" fill="#e0af68" font-size="9" font-family="monospace">max_tokens=1</text>
+    </g>
+    <g id="pd-s4" class="pd-fade">
+      <rect x="505" y="40" width="110" height="68" rx="8" fill="none" stroke="#e0af68" stroke-dasharray="4,3"/>
+      <text x="560" y="60" text-anchor="middle" fill="#e0af68" font-size="9" font-family="monospace">KV blocks</text>
+      <rect x="518" y="68" width="18" height="18" rx="3" fill="rgba(224,175,104,0.4)"/>
+      <rect x="540" y="68" width="18" height="18" rx="3" fill="rgba(224,175,104,0.4)"/>
+      <rect x="562" y="68" width="18" height="18" rx="3" fill="rgba(224,175,104,0.4)"/>
+      <rect x="584" y="68" width="18" height="18" rx="3" fill="rgba(224,175,104,0.4)"/>
+      <line x1="490" y1="74" x2="501" y2="74" stroke="#e0af68" stroke-width="1.5"/>
+    </g>
+    <g id="pd-s5" class="pd-fade">
+      <line x1="560" y1="112" x2="498" y2="238" stroke="#9ece6a" stroke-width="2.5" stroke-dasharray="6,4" marker-end="url(#pd-ahg)"/>
+      <text x="605" y="180" text-anchor="middle" fill="#9ece6a" font-size="10" font-family="monospace">NIXL transfer</text>
+      <text x="605" y="194" text-anchor="middle" fill="#9ece6a" font-size="9" font-family="monospace">RDMA / GPUDirect</text>
+    </g>
+    <g id="pd-s6" class="pd-fade">
+      <line x1="296" y1="288" x2="130" y2="195" stroke="#7aa2f7" stroke-width="2" marker-end="url(#pd-ah)"/>
+      <text x="200" y="305" text-anchor="middle" fill="#7aa2f7" font-size="10" font-family="monospace">tokens stream back</text>
+    </g>`;
+
+  const STEPS = [
+    { show: ['pd-s1'], text: '<b>1 — Arrival.</b> The request hits the gateway. The EPP runs its decode scheduling profile and picks the best decode pod — using the same prefix-cache and load scorers from section 07.' },
+    { show: ['pd-s1', 'pd-s2'], text: '<b>2 — The decider.</b> Is the <em>uncached</em> part of the prompt large enough to justify remote prefill? If not, D handles everything itself. If yes, the EPP also picks a prefill pod and injects its address as the header <code style="font-family:monospace">x-llm-d-prefiller-host-port</code>.' },
+    { show: ['pd-s1', 'pd-s2', 'pd-s3'], text: '<b>3 — Sidecar fans out.</b> The routing-proxy sidecar on D reads the header and calls P first: the original request with <code style="font-family:monospace">max_tokens=1</code> plus KV-transfer parameters (the default connector is vLLM\'s <code style="font-family:monospace">nixlv2</code>).' },
+    { show: ['pd-s1', 'pd-s2', 'pd-s3', 'pd-s4'], text: '<b>4 — Prefill.</b> P chews through the whole prompt in one compute-bound burst — its only job. The resulting KV blocks sit in P\'s GPU memory. Prefill pods can even use a different parallelism than decode pods (heterogeneous TP).' },
+    { show: ['pd-s1', 'pd-s2', 'pd-s3', 'pd-s4', 'pd-s5'], text: '<b>5 — KV handoff.</b> NIXL moves the KV blocks from P\'s GPU directly into D\'s GPU over RDMA (GPUDirect — the CPU never touches the data). This hop is why P/D needs RDMA-class interconnects; the TCP fallback is for testing only.' },
+    { show: ['pd-s1', 'pd-s2', 'pd-s3', 'pd-s4', 'pd-s5', 'pd-s6'], text: '<b>6 — Decode.</b> D generates tokens at steady, memory-bound pace — never stalled by someone else\'s giant prefill. If P had failed, the sidecar would have fallen back to local prefill on D. ITL stays smooth; TTFT is owned by a pool you can scale independently.' },
+  ];
+  let step = 0;
+  function show() {
+    document.querySelectorAll('#pd-svg .pd-fade').forEach(g => g.classList.remove('pd-show'));
+    STEPS[step].show.forEach(id => $(id).classList.add('pd-show'));
+    $('pd-text').innerHTML = STEPS[step].text;
+    $('pd-step-label').textContent = `step ${step + 1} / ${STEPS.length}`;
+    $('pd-prev').disabled = step === 0;
+    $('pd-next').disabled = step === STEPS.length - 1;
+  }
+  $('pd-prev').addEventListener('click', () => { if (step > 0) { step--; show(); } });
+  $('pd-next').addEventListener('click', () => { if (step < STEPS.length - 1) { step++; show(); } });
+  show();
+})();
+</script>
+</body>
+</html>

@@ -1,3 +1,9 @@
+- slug: llm-inference-scaling
+  title: "Scaling LLM inference"
+  subtitle: "From one GPU to a fleet: vLLM, parallelism, and why round-robin is the wrong load balancer — ending at llm-d."
+  tags: [llm, inference, gpu]
+  published: 2026-11-25
+
 - slug: semantic-search-from-scratch
   title: "Semantic search from scratch"
   subtitle: "Everything between an embedding and a search system that actually works."
